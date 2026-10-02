@@ -2,9 +2,9 @@
 
 # Glassbox
 
-**See how systems work, one change at a time.**
+**See how it works, one change at a time.**
 
-Type a topic. Glassbox plans, draws, checks, and reviews a short animated story that explains it,<br>
+Type a topic, or paste your own notes. Glassbox plans, draws, checks, and reviews a short animated story that explains it,<br>
 then plays it one sentence at a time, in the spirit of [The Secret Lives of Data](https://thesecretlivesofdata.com/raft/).
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -19,31 +19,46 @@ then plays it one sentence at a time, in the spirit of [The Secret Lives of Data
 
 ## What it is
 
-Glassbox explains technical concepts as narrated, step-by-step animations: servers and clients as circles, messages travelling between them, logs filling up, code highlighting line by line, tables filling in, and the camera zooming in where it matters. Each step changes one thing and says why.
+Glassbox explains how things work, what happened, how options differ, and how things are organized, as narrated, step-by-step animations. It picks the view the subject needs: servers and clients exchanging messages, code highlighting line by line beside the table it fills, a timeline with lanes for parallel work, a comparison of alternatives against criteria, a hierarchy, or a chart. Each step changes one thing and says why.
 
-- **Generate any fitting topic.** An AI pipeline plans the explanation, draws it as validated scene data, checks it with code, has a second model review it, and revises up to three times. Only a draft that passes every check is shown.
-- **Hand-written stories** for HTTP and Kafka show what the format can do.
-- **No accounts and no database.** Explanations you generate are saved in your own browser.
+- **Explain a topic.** An AI pipeline decides what you should come away understanding, chooses a view, draws it as validated data, checks it with code, has a second model review it, and revises up to three times. Only a draft that passes every check is shown.
+- **Visualize your own information.** Paste notes, a report, or a list of events. Glassbox lists the claims in it, checks that every quoted excerpt really appears in your text, and links each step to the passages it rests on. Contradictions and gaps are shown, not smoothed over.
+- **Sources and assumptions, step by step.** A drawer shows what the current step rests on, and what the explanation covers, leaves out, and assumes. Topic explanations say plainly that no sources were consulted.
+- **Explore a step.** Ask for an explanation of the step, a simpler version, or another example; each is reviewed and kept beside the step.
+- **Works on phones.** Explanations are laid out again for tall screens, so tables, timelines, and charts stay readable.
+- **No accounts and no database.** Everything you generate is saved in your own browser.
 - **Works without an API key** in demo mode, with the bundled examples and stories.
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/images/home.png" alt="Home page with the topic box"></td>
-    <td width="50%"><img src="docs/images/generating.png" alt="Generation progress: check access, plan, draft, check, review, save"></td>
+    <td width="50%"><img src="docs/images/home.png" alt="Home page: explain a topic or visualize your own information"></td>
+    <td width="50%"><img src="docs/images/material.png" alt="Visualize my information: pasted notes, an optional title and focus, and options for audience, language, and depth"></td>
   </tr>
   <tr>
-    <td><em>Type a topic, or try a suggestion.</em></td>
-    <td><em>Real progress, stage by stage: no fake percentages.</em></td>
+    <td><em>Type a topic, or paste your own notes.</em></td>
+    <td><em>Pasted material: every claim is linked to its passage.</em></td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/incident-timeline.png" alt="A timeline with three lanes, spaced to scale, with stated cause and response relations"></td>
+    <td><img src="docs/images/comparison.png" alt="HTTP/1.1, HTTP/2, and HTTP/3 compared criterion by criterion, with a not-applicable cell"></td>
+  </tr>
+  <tr>
+    <td><em>Timelines: lanes, durations, spacing that says if it is to scale, and only stated causes.</em></td>
+    <td><em>Comparisons: criteria revealed row by row; unknown or not-applicable values are marked, never guessed.</em></td>
   </tr>
   <tr>
     <td><img src="docs/images/code-and-table.png" alt="Generated explanation of Fibonacci with dynamic programming: code with the current lines highlighted next to the table being filled"></td>
-    <td><img src="docs/images/timeline.png" alt="Generated explanation of Apollo 11 with a timeline of dated events"></td>
+    <td><img src="docs/images/generating.png" alt="Generation progress: check access, plan, draft, check, review, save"></td>
   </tr>
   <tr>
     <td><em>AI-generated: code and the table it fills, zoomed in.</em></td>
-    <td><em>AI-generated: a timeline of events, technical or not.</em></td>
+    <td><em>Real progress, stage by stage: no fake percentages.</em></td>
   </tr>
 </table>
+
+<p align="center"><img src="docs/images/phone.png" alt="The incident timeline on a phone, laid out vertically with three lanes" width="300"></p>
+
+<p align="center"><em>On phones, explanations are laid out again for the tall screen.</em></p>
 
 <img src="docs/images/library.png" alt="Your library: saved explanations with thumbnails and a delete button">
 
@@ -54,9 +69,9 @@ Glassbox explains technical concepts as narrated, step-by-step animations: serve
 ## Features
 
 - **A player you control.** One sentence at a time; press **Continue** or **→**, replay with **←**. Chapters with links (`/learn/kafka#replication`), a speed control (Slow, Normal, Fast), keyboard support, a screen-reader live region, and reduced motion that shows each step finished.
-- **A small visual language.** Nodes with roles and states; messages that travel in rounds, so a reply follows its request; and panels for a **log** (records, queues, stacks, commits), **code** (with the running line highlighted), a **table** (cells filling in), and a **timeline** (dated events). The camera can zoom onto a panel.
-- **Careful generation.** A planner declines topics that don't fit and suggests narrower ones. A generator writes strict JSON. Code checks references, limits, layout, and overlaps. A reviewer checks accuracy and teaching quality. Failing drafts are revised, at most three times in total.
-- **Safe by design.** The AI writes data, never code. Its output is validated against one schema, rendered only as plain text with application-owned shapes and colors, and always labeled as AI-generated.
+- **A small visual language.** Nodes with roles and states; messages that travel in rounds, so a reply follows its request; and panels for a **log**, **code** (the running line highlighted), a **table**, a **timeline** (lanes, durations, dates or explicitly unknown dates, evenly spaced or to scale, with a label saying which, and only stated cause-and-effect links), a **comparison** (alternatives against criteria with units; unknown and not-applicable values marked, never guessed or ranked), a **hierarchy** (trees and groups, with the relation named), and a **chart** (bars or lines, missing values marked, illustrative numbers labeled). The camera zooms where it matters.
+- **Careful generation.** A planner states the learning goal and picks the representation before designing scenes, and declines what the player can't show with alternatives that would work. A generator writes strict JSON without coordinates; application code lays it out. Code checks references, limits, layout, overlaps, and citations. A reviewer sees your original request and checks fidelity, accuracy, and teaching quality. Failing drafts are revised, at most three times in total.
+- **Safe by design.** The AI writes data, never code. Its output is validated against one schema, rendered only as plain text with application-owned shapes and colors, and always labeled as AI-generated. Pasted material is treated as data: instructions inside it are ignored, and that is recorded.
 - **Private by default.** Nothing is stored on the server. The OpenAI key stays on the server; visitors' IP addresses are only kept as keyed hashes for rate limiting, in memory.
 
 ---
@@ -82,40 +97,44 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Type a topic on the home page. After a minute or two the explanation opens and is saved in **Your library**.
+Type a topic on the home page, or switch to **Visualize my information** and paste text (or use the sample). After a minute or two the explanation opens and is saved in **Your library**. Under **Options** you can choose the audience, language, and depth.
 
 ---
 
-## What topics work
+## What works
 
-Glassbox can show anything that can be explained as a few actors, messages, and changing state, plus up to three panels.
+Glassbox shows what can be explained with a few actors and messages, or with one of its panels, in a short linear story.
 
-| Works well | Declined (with a narrower suggestion) |
-| --- | --- |
-| Protocols: HTTP, TCP handshake, DNS, TLS, OAuth | Charts, plots, and continuous math |
-| Distributed systems: Raft, two-phase commit, consistent hashing, replication | Rendered formulas |
-| Data structures and algorithms: binary search, Bloom filters, hash tables | Images, maps, and spatial drawing |
-| Code walkthroughs on small inputs: recursion, loops | Topics too vague to explain responsibly |
-| Table-filling algorithms: dynamic programming, joins | |
-| Logs, queues, and streams: Kafka, Git history | |
-| Processes and histories: Apollo 11, how a bill becomes law | |
+| View | Good for | Examples |
+| --- | --- | --- |
+| Actors and messages | Protocols, requests, consensus, decision procedures | TCP handshake, DNS, Raft, OAuth |
+| Code beside data | Short functions on small inputs | Binary search, Fibonacci with dynamic programming |
+| Changing data | Logs, queues, tables | Kafka, hash tables, Git history |
+| Timeline | Histories, processes, incidents, projects with parallel work | Apollo 11, an incident review, how a bill becomes law |
+| Comparison | Alternatives against explicit criteria | Mitosis vs meiosis, HTTP/1.1 vs HTTP/2 vs HTTP/3 |
+| Hierarchy | Organizations, taxonomies, system structure | The U.S. federal government, how vertebrates are classified |
+| Chart | Amounts across categories or over time, from your data or clearly labeled illustrations | Compound interest, quarterly sales from your notes |
 
-The AI review is a quality check, not proof of correctness, and no sources are consulted. Verify anything important.
+Declined, with suggestions that would work: images, maps, plots of continuous functions, rendered formulas, and requests too vague to explain responsibly. Ambiguous requests ("Mercury") get a choice of readings. Links are not opened: paste the text instead.
+
+Topic explanations come from the AI model's general knowledge; no sources are consulted. Explanations of your material are only as reliable as the material, and are not checked against other sources. The AI review is a quality check, not proof of correctness. Verify anything important.
 
 ---
 
 ## Cost
 
-Measured over three runs of the 16-topic evaluation set with the default model (`gpt-6-luna`):
+Measured with the default model (`gpt-6-luna`) over the 23-case evaluation set, two repeats per case (see [docs/EVALS.md](docs/EVALS.md)):
 
 | | |
 | --- | --- |
-| Typical explanation | **$0.005–0.010**, about 1–2 minutes |
-| Declined topic | about $0.0003, a few seconds |
-| Worst case (7 AI calls at their output limits) | about $0.06 |
-| Good topics accepted | 79–93% per run (the rest fail review or run out of time; retrying often works) |
+| Typical explanation of a topic | **about $0.003–0.016**, median about $0.006, 40 s to 2.5 minutes |
+| Explanation of pasted material (one more AI call) | median about $0.008, up to about 4 minutes when drafts need repair |
+| Declined request | under $0.001, a few seconds |
+| Explain or simplify a step | under a cent, about 5–15 s |
+| A run that fails all three drafts | about $0.01–0.02 |
+| Worst case (9 AI calls at their output limits) | about $0.08 |
 
-Explaining 100 topics costs roughly **$0.50–1.00**. The hourly limits below cap how much a public deployment can spend.
+Explaining 100 topics costs roughly **$0.60–1.00**. The hourly limits below cap how much a public deployment can spend. Running the full evaluation (46 runs) costs about $0.33 for the pipeline plus about $0.43 for the independent grader. In the latest full run, 87% of answerable requests were accepted (the rest failed review or a check; retrying often works) and every unsupported or ambiguous request was declined with alternatives.
 
 ---
 
@@ -126,13 +145,14 @@ Set these in `.env.local` (see [`.env.example`](.env.example)).
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `OPENAI_API_KEY` | none | Enables generation. Without it, the app runs in demo mode. Server-only. |
-| `OPENAI_MODEL` | `gpt-6-luna` | Model for all three roles. |
-| `OPENAI_EXTRACTOR_MODEL`, `OPENAI_GENERATOR_MODEL`, `OPENAI_EVALUATOR_MODEL` | `OPENAI_MODEL` | Per-role overrides. |
+| `OPENAI_MODEL` | `gpt-6-luna` | Model for every role. |
+| `OPENAI_EXTRACTOR_MODEL`, `OPENAI_GENERATOR_MODEL`, `OPENAI_EVALUATOR_MODEL` | `OPENAI_MODEL` | Per-role overrides (the material reader uses the extractor's model, the step writer the generator's). |
 | `OPENAI_REASONING_EFFORT` | model default | `none` to `high`; leave unset for models without it. |
 | `GENERATION_MODE` | automatic | `demo` forces demo mode; `live` requires a key. |
 | `GENERATION_DEADLINE_MS` | `270000` | Server deadline per request (30–290 s). |
 | `RATE_LIMIT_PER_CLIENT_PER_HOUR` | `5` | Generations per visitor per hour. |
-| `RATE_LIMIT_GLOBAL_PER_HOUR` | `100` | Generations for the whole site per hour; caps your OpenAI cost. |
+| `RATE_LIMIT_GLOBAL_PER_HOUR` | `100` | Generations for the whole site per hour; caps your OpenAI cost. Exploring a step counts as a generation. |
+| `EVAL_GRADER_MODEL` | `gpt-6.1-sol` | Only for `npm run eval:prompts`: the independent grader. |
 
 ---
 
@@ -193,8 +213,8 @@ Add it to `lib/stories/index.ts` and it appears under **Visualizations** at `/le
 | `npm run check` | Typecheck, lint, unit tests, and a production build |
 | `npm test` | Unit tests (Vitest) |
 | `npm run e2e` | Browser tests (Playwright) against a running app |
-| `npm run eval:prompts -- --label <name>` | Run the evaluation topics through the real pipeline (costs about $0.13) |
-| `npm run smoke:live -- "topic"` | Generate one explanation from the command line (real API) |
+| `npm run eval:prompts -- --label <name>` | Run the evaluation cases through the real pipeline, check and grade the results (see Cost) |
+| `npm run smoke:live -- "topic"` | Generate one explanation from the command line (real API); `-- --file notes.txt "Title"` for material |
 
 How it all fits together, from the scene format to the streaming protocol and the tests, is in **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
 
@@ -202,9 +222,10 @@ How it all fits together, from the scene format to the streaming protocol and th
 
 ## Limitations
 
-- Only topics that fit the visual language work; others are declined.
-- Automated review uses the same family of model as the generator and has no sources. It catches many mistakes, but not all.
-- One or two generations in ten fail review or run out of time, and cost a cent or two each; retrying often works.
+- Only requests that fit one of the views work; others are declined with alternatives. Explanations are linear: there are no branching "what if" simulations yet (see [ARCHITECTURE.md](docs/ARCHITECTURE.md#deferred-scenarios-and-what-if)).
+- Material can only be pasted as text (up to 16,000 characters). URLs and files are not read.
+- The automated reviewer uses the same family of model as the generator, and has no sources beyond your material. It catches many mistakes, but not all.
+- Some generations fail review or run out of time, and cost a cent or two each; retrying often works.
 - Saved explanations stay in the browser that made them; links don't work elsewhere, and clearing site data removes them.
 - Generation runs inside the request: closing the tab cancels it.
 
