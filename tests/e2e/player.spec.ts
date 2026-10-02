@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 /**
  * The story player (components/story/StoryPlayer.tsx), which plays every
- * explanation: bundled demos here, saved and unsaved ones in the live specs,
+ * explanation: bundled examples here, saved ones in the live specs,
  * and the hand-written stories under /learn.
  */
 
@@ -38,7 +38,7 @@ test.describe("story player", () => {
   test("opens on a title card and steps through with Continue and the arrow keys", async ({ page }) => {
     await page.goto("/demo/raft-leader-election");
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Raft leader election (simplified)");
-    await expect(page.getByText("Bundled demo", { exact: true })).toBeVisible();
+    await expect(page.getByText("Example", { exact: true })).toBeVisible();
 
     await continueButton(page).click();
     await expect(caption(page)).toHaveText(/^How five Raft servers pick a single leader/);

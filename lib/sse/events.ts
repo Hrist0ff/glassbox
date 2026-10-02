@@ -68,7 +68,7 @@ export const GenerationEventSchema = z.discriminatedUnion("type", [
     conceptId: z.string(),
     url: z.string().startsWith("/"),
     attempts: z.number().int().nonnegative(),
-    /** False in demo mode (nothing was generated) and when no database is configured. */
+    /** Always false: nothing is stored on the server (the browser saves generated explanations). */
     persisted: z.boolean(),
     demo: z.boolean(),
     /**

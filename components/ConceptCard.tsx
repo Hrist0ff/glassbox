@@ -14,9 +14,10 @@ export type ConceptCardData = {
   thumbnail?: ReactNode;
 };
 
-export function ConceptCard({ card }: { card: ConceptCardData }) {
+/** `action` is drawn over the card's top-right corner, outside the link, e.g. a delete button. */
+export function ConceptCard({ card, action }: { card: ConceptCardData; action?: ReactNode }) {
   return (
-    <li className="h-full">
+    <li className="relative h-full">
       <Link
         href={card.href}
         className="group flex h-full flex-col overflow-hidden rounded-2xl border border-line bg-paper-raised transition-[border-color,box-shadow] hover:border-line-strong hover:shadow-[0_14px_30px_-22px_rgba(30,25,15,0.4)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
@@ -36,6 +37,7 @@ export function ConceptCard({ card }: { card: ConceptCardData }) {
           </p>
         </div>
       </Link>
+      {action ? <div className="absolute right-3 top-3">{action}</div> : null}
     </li>
   );
 }

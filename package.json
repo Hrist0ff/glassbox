@@ -1,5 +1,5 @@
 {
-  "name": "interactive-wiki",
+  "name": "glassbox",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -10,8 +10,6 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:db": "vitest run --config vitest.db.config.mts",
-    "seed:generate": "tsx scripts/generate-seed.ts",
     "smoke:live": "tsx --conditions=react-server scripts/smoke-live.ts",
     "check": "npm run typecheck && npm run lint && npm run test && npm run build",
     "mock:openai": "tsx scripts/mock-openai.ts",
@@ -19,7 +17,6 @@
     "eval:prompts": "tsx --conditions=react-server scripts/eval-prompts.ts"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.117.2",
     "framer-motion": "^13.5.0",
     "next": "16.3.8",
     "openai": "^7.25.0",

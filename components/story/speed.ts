@@ -10,7 +10,7 @@ import { useSyncExternalStore } from "react";
 export const SPEEDS = { slow: 0.3, normal: 0.5, fast: 1 } as const;
 export type Speed = keyof typeof SPEEDS;
 
-const KEY = "stepwise:story-speed";
+const KEY = "glassbox:story-speed";
 const DEFAULT: Speed = "normal";
 const listeners = new Set<() => void>();
 /** Fallback when storage is blocked, so the choice still applies until the page reloads. */

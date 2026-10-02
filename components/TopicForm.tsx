@@ -6,7 +6,7 @@ import { normalizeTopic } from "@/lib/generation/topic";
 import { GenerationLoader, useGenerationRun } from "./GenerationLoader";
 
 export type GenerationAvailability =
-  | { mode: "live"; perHourLimit: number; saves: boolean }
+  | { mode: "live"; perHourLimit: number }
   | { mode: "demo"; demoTopics: string[] }
   | { mode: "misconfigured" };
 
@@ -20,7 +20,7 @@ const LIVE_SUGGESTIONS = [
 ];
 
 export function TopicForm({ availability }: { availability: GenerationAvailability }) {
-  const { state, start, cancel, retry, reset, storageBlocked } = useGenerationRun();
+  const { state, start, cancel, retry, reset } = useGenerationRun();
   const [topic, setTopic] = useState("");
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -124,8 +124,6 @@ export function TopicForm({ availability }: { availability: GenerationAvailabili
         <div className="mt-6">
           <GenerationLoader
             state={state}
-            saves={availability.mode !== "live" || availability.saves}
-            storageBlocked={storageBlocked}
             onCancel={cancel}
             onRetry={retry}
             onEditTopic={editTopic}
@@ -166,9 +164,7 @@ function AvailabilityNote({ availability, id }: { availability: GenerationAvaila
       return (
         <p id={id} className={className}>
           Up to {availability.perHourLimit} generations per hour.{" "}
-          {availability.saves
-            ? "New explanations are public, checked automatically, and labeled as AI-generated."
-            : "No database is configured, so nothing is saved: each explanation opens in this tab and is gone when you close it. Checked automatically and labeled as AI-generated."}
+          Explanations are checked automatically, labeled as AI-generated, and saved in this browser.
         </p>
       );
   }

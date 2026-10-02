@@ -1,12 +1,12 @@
-import type { SlotClaim } from "@/lib/data/generation-slots";
+export type SlotClaim =
+  | { allowed: true }
+  | { allowed: false; reason: "in_progress" | "client_rate_limited" | "global_rate_limited"; retryAfterSeconds: number };
 
 /**
- * In-process rate limit and single-flight lease, for running without a
- * database. Same rules as the Postgres functions (per-client hourly limit,
- * global hourly limit, one running generation per client), but the state lives
- * in one server process: it resets on restart and is not shared between
- * serverless instances. Fine for a single local server; deployments should
- * configure Supabase.
+ * Rate limit and single-flight lease: a per-client hourly limit, a global
+ * hourly limit, and one running generation per client. The state lives in one
+ * server process, so it resets on restart and is not shared between
+ * serverless instances; the global limit is per instance there.
  */
 export class MemorySlots {
   private events: { clientKey: string; at: number }[] = [];

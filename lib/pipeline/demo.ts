@@ -4,7 +4,7 @@ import type { TerminalEventInput } from "@/lib/generation/stream";
 import type { GenerationEventInput } from "@/lib/sse/events";
 
 /**
- * Local demo mode: no AI call and no database write. The topic is matched
+ * Local demo mode: no AI call. The topic is matched
  * against bundled fixtures by keyword, the fixture is run through the real
  * deterministic validator, and the reader is pointed at /demo/<slug>.
  * Every message says plainly that this is demo mode.

@@ -14,7 +14,7 @@ import {
  * Canonical scene contract.
  *
  * One set of Zod definitions is used for AI structured output (via
- * `GeneratedConceptContentSchema`, derived below), server validation, database
+ * `GeneratedConceptContentSchema`, derived below), server validation, browser
  * reads and writes, renderer input, and test fixtures. TypeScript types are
  * inferred from these schemas; there are no hand-written duplicates.
  *

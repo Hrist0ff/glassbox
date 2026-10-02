@@ -279,7 +279,7 @@ export async function runGenerationPipeline(topic: string, deps: PipelineDeps): 
       } catch {
         emit({ type: "progress", stage: "persist", state: "failed", message: "Saving failed" });
         if (signal.aborted) {
-          // The request may have reached the database before the abort.
+          // The save may have completed before the abort.
           return fail(
             deadline.expired() ? "timeout" : "cancelled",
             "Stopped while saving, so the explanation may or may not have been saved. Retrying will open it if it was.",

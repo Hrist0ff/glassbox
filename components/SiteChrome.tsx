@@ -5,10 +5,10 @@ import type { ReactNode } from "react";
 
 /**
  * Explanations play full-screen in the story player, which brings its own
- * minimal navbar: the hand-written stories (/learn) and every concept, saved,
- * bundled, or unsaved.
+ * minimal navbar: the hand-written stories (/learn) and every explanation,
+ * saved in this browser or bundled with the app.
  */
-const BARE = /^\/(?:learn|preview)(?:\/|$)|^\/(?:concept|demo)\//;
+const BARE = /^\/learn(?:\/|$)|^\/(?:concept|demo)\//;
 const isBare = (pathname: string) => BARE.test(pathname);
 
 export function SiteChrome({ header, footer, children }: { header: ReactNode; footer: ReactNode; children: ReactNode }) {

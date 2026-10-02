@@ -195,7 +195,7 @@ describe("semantic rejections", () => {
 });
 
 describe("parseStoredConcept", () => {
-  it("rejects content whose id does not match the database row", () => {
+  it("rejects content whose id does not match the expected id", () => {
     const result = parseStoredConcept(raftLeaderElection, "00000000-0000-4000-8000-000000000000");
     expect(result.ok).toBe(false);
   });

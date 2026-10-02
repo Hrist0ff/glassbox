@@ -1,9 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { after } from "next/server";
 import { LIMITS } from "@/lib/concept/constants";
-import { findConceptByRequest, insertGeneratedConcept } from "@/lib/data/concepts";
-import { claimGenerationSlot, releaseGenerationSlot, type SlotClaim } from "@/lib/data/generation-slots";
-import { generationMode, modelConfig, serverEnv, supabaseSecretKey } from "@/lib/env";
+import { generationMode, modelConfig, serverEnv } from "@/lib/env";
 import { clientKey } from "@/lib/generation/client-key";
 import { MemorySlots } from "@/lib/generation/memory-slots";
 import { createGenerationStream, SSE_HEADERS, type TerminalEventInput } from "@/lib/generation/stream";
@@ -14,7 +12,6 @@ import { createOpenAiClient } from "@/lib/pipeline/openai-client";
 import { runGenerationPipeline, type GenerationMeta, type PipelineOutcome } from "@/lib/pipeline/orchestrator";
 import { GenerateRequestSchema, MAX_ATTEMPTS, type PreStreamError } from "@/lib/sse/events";
 import type { Concept } from "@/lib/concept/schema";
-import { createAdminClient } from "@/lib/supabase/server";
 
 /**
  * POST /api/generate — JSON request, server-sent events response.
@@ -23,11 +20,12 @@ import { createAdminClient } from "@/lib/supabase/server";
  * keeps the client informed but does not extend the platform limit, so:
  *   - maxDuration is 300 s (the Vercel default on all plans with Fluid Compute);
  *   - the pipeline deadline (GENERATION_DEADLINE_MS, default 270 s) aborts work
- *     before the platform does, keeping time for the save and terminal event;
+ *     before the platform does, keeping time for the terminal event;
  *   - every provider call has its own timeout and at most one provider retry.
  * If the client disconnects, the generation is cancelled and nothing continues
- * in the background. (A disconnect during the final insert may still save it;
- * the idempotency key lets a retry find that result.)
+ * in the background. Nothing is stored on the server: the `completed` event
+ * carries the validated explanation, and the browser saves it in localStorage.
+ * The idempotency key identifies the request for the per-visitor lease.
  */
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -36,17 +34,10 @@ const RATE_WINDOW_SECONDS = 3600;
 /** Lease outlives the longest possible request, so a crashed instance cannot block a visitor for long. */
 const LEASE_SECONDS = maxDuration + 30;
 
-/** Rate-limit state when no database is configured; per server process (see MemorySlots). */
+/** Rate-limit state, per server process (see MemorySlots). */
 const memorySlots = new MemorySlots();
 /** Keys the in-process limiter only, so a random per-process secret is enough. */
 const PROCESS_SECRET = randomBytes(32).toString("hex");
-
-/** Where a finished explanation goes: the database, or back to the browser when there is none. */
-type Storage = {
-  persist: (concept: Concept, meta: GenerationMeta, signal: AbortSignal) => Promise<Extract<TerminalEventInput, { type: "completed" }>>;
-  release: () => Promise<void>;
-  messages?: { running: string; done: string };
-};
 
 function jsonError(status: number, error: PreStreamError, headers: Record<string, string> = {}) {
   return Response.json({ error }, { status, headers: { "Cache-Control": "no-store", ...headers } });
@@ -151,68 +142,15 @@ export async function POST(request: Request) {
     leaseSeconds: LEASE_SECONDS,
   };
 
-  let claim: SlotClaim;
-  let storage: Storage;
-  if (mode.storage === "database") {
-    const admin = createAdminClient();
-    const secret = supabaseSecretKey();
-    if (!admin || !secret) {
-      return jsonError(503, { code: "misconfigured", message: "Generation is not configured on this server yet." });
-    }
-    const visitor = clientKey(request.headers, secret);
-
-    let existingId: string | null;
-    try {
-      existingId = await findConceptByRequest(admin, idempotencyKey);
-    } catch {
-      return jsonError(503, { code: "internal", message: "The database is unavailable. Please try again." });
-    }
-    if (existingId) {
-      // A previous request with this key already saved its result (for example,
-      // the connection dropped right after saving). Return it instead of paying again.
-      const stream = createGenerationStream({
-        requestId,
-        deadlineMs: 5_000,
-        run: async ({ emit }) => {
-          emit({ type: "started", mode: "live", topic, maxAttempts: MAX_ATTEMPTS });
-          emit({ type: "progress", stage: "access", state: "done", message: "Found the explanation saved by your earlier request" });
-          return { type: "completed", conceptId: existingId, url: `/concept/${existingId}`, attempts: 0, persisted: true, demo: false };
-        },
-      });
-      return sseResponse(stream.body, requestId);
-    }
-
-    try {
-      claim = await claimGenerationSlot(admin, { clientKey: visitor, ...limits });
-    } catch {
-      return jsonError(503, { code: "internal", message: "The database is unavailable. Please try again." });
-    }
-    storage = {
-      persist: async (concept, meta, signal) => {
-        const { id } = await insertGeneratedConcept(admin, { concept, topic, requestId: idempotencyKey, meta }, signal);
-        return { type: "completed", conceptId: id, url: `/concept/${id}`, attempts: meta.attempts, persisted: true, demo: false };
-      },
-      release: () => releaseGenerationSlot(admin, visitor, idempotencyKey),
-    };
-  } else {
-    // No database: limits live in this process and the result goes back to the
-    // browser instead of being saved. Retrying generates again.
-    const visitor = clientKey(request.headers, PROCESS_SECRET);
-    claim = memorySlots.claim({ clientKey: visitor, ...limits });
-    storage = {
-      persist: async (concept, meta) => ({
-        type: "completed",
-        conceptId: concept.id,
-        url: "/preview",
-        attempts: meta.attempts,
-        persisted: false,
-        demo: false,
-        concept,
-      }),
-      release: async () => memorySlots.release(visitor, idempotencyKey),
-      messages: { running: "Not saving: no database is configured", done: "Ready to open in this tab (not saved)" },
-    };
-  }
+  // Nothing is stored on the server: the finished explanation goes back to the
+  // browser, which saves it in localStorage. Retrying generates again.
+  const visitor = clientKey(request.headers, PROCESS_SECRET);
+  const claim = memorySlots.claim({ clientKey: visitor, ...limits });
+  let completed: Extract<TerminalEventInput, { type: "completed" }> | undefined;
+  const persist = async (concept: Concept, meta: GenerationMeta) => {
+    completed = { type: "completed", conceptId: concept.id, url: `/concept/${concept.id}`, attempts: meta.attempts, persisted: false, demo: false, concept };
+    return { id: concept.id };
+  };
 
   if (!claim.allowed) {
     const retryAfter = { "Retry-After": String(claim.retryAfterSeconds) };
@@ -241,7 +179,6 @@ export async function POST(request: Request) {
   const deadline = new Deadline(env.GENERATION_DEADLINE_MS);
   const llm = createOpenAiClient({ apiKey: env.OPENAI_API_KEY!, reasoningEffort: models.reasoningEffort });
   let outcome: PipelineOutcome | undefined;
-  let completed: Extract<TerminalEventInput, { type: "completed" }> | undefined;
 
   const stream = createGenerationStream({
     requestId,
@@ -257,11 +194,8 @@ export async function POST(request: Request) {
         signal,
         deadline,
         newId: randomUUID,
-        persist: async (concept, meta, persistSignal) => {
-          completed = await storage.persist(concept, meta, persistSignal);
-          return { id: completed.conceptId };
-        },
-        persistMessages: storage.messages,
+        persist,
+        persistMessages: { running: "Preparing the explanation for your browser", done: "Ready" },
       });
       if (!outcome.ok) {
         return { type: "failed", code: outcome.code, message: outcome.message, retryable: outcome.retryable, reasons: outcome.reasons };
@@ -273,13 +207,12 @@ export async function POST(request: Request) {
       logOutcome({
         requestId,
         result: terminal.type === "completed" ? "completed" : terminal.code,
-        storage: mode.storage,
         attempts: outcome?.attempts ?? 0,
         latencyMs: deadline.elapsedMs(),
         usage: outcome ? (outcome.ok ? outcome.meta.usage : outcome.usage) : undefined,
         models,
       });
-      await storage.release();
+      memorySlots.release(visitor, idempotencyKey);
     },
   });
 

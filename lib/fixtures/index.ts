@@ -11,8 +11,7 @@ export type BundledFixture = {
 };
 
 /**
- * Curated explanations bundled with the app. They are also seeded into
- * Supabase with the same ids (see `scripts/generate-seed.ts`).
+ * Curated explanations bundled with the app, shown under "Examples".
  */
 export const BUNDLED_FIXTURES: readonly BundledFixture[] = [
   { slug: "raft-leader-election", concept: raftLeaderElection, keywords: ["raft", "leader election", "consensus"] },

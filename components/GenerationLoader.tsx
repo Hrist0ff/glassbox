@@ -10,7 +10,7 @@ import {
   type LoaderState,
   type StageStatus,
 } from "@/lib/generation/client";
-import { storeUnsaved } from "@/lib/generation/unsaved";
+import { saveExplanation } from "@/lib/library";
 import type { Stage } from "@/lib/sse/events";
 
 /**
@@ -23,8 +23,6 @@ export function useGenerationRun() {
   const active = useRef<AbortController | null>(null);
   const last = useRef<{ topic: string; idempotencyKey: string } | null>(null);
   const router = useRouter();
-  // Set when an unsaved explanation could not be handed to /preview.
-  const [storageBlocked, setStorageBlocked] = useState(false);
 
   const start = useCallback(
     async (topic: string, idempotencyKey: string) => {
@@ -32,7 +30,6 @@ export function useGenerationRun() {
       const controller = new AbortController();
       active.current = controller;
       last.current = { topic, idempotencyKey };
-      setStorageBlocked(false);
       dispatch({ type: "start", topic });
       const end = await streamGeneration({
         topic,
@@ -48,10 +45,11 @@ export function useGenerationRun() {
         router.push(end.event.url);
         return;
       }
-      // ...or, without a database, once the explanation itself is in this tab.
+      // ...or once the explanation itself has arrived: save it in this browser and open it.
+      // If storage is full or blocked it still opens for this visit, marked as not saved.
       if (end.event.concept) {
-        if (storeUnsaved({ topic, concept: end.event.concept, createdAt: new Date().toISOString() })) router.push(end.event.url);
-        else setStorageBlocked(true);
+        saveExplanation({ topic, concept: end.event.concept, createdAt: new Date().toISOString(), attempts: end.event.attempts });
+        router.push(end.event.url);
       }
     },
     [router],
@@ -66,7 +64,7 @@ export function useGenerationRun() {
   // Leaving the page cancels the request; the server stops when the connection closes.
   useEffect(() => () => active.current?.abort(), []);
 
-  return { state, start, cancel, retry, reset, storageBlocked };
+  return { state, start, cancel, retry, reset };
 }
 
 const STAGE_LABELS: Record<Stage, { live: string; demo: string }> = {
@@ -75,7 +73,7 @@ const STAGE_LABELS: Record<Stage, { live: string; demo: string }> = {
   generate: { live: "Draft scenes", demo: "Draft scenes" },
   validate: { live: "Check structure and layout", demo: "Check structure and layout" },
   evaluate: { live: "Review accuracy and teaching quality", demo: "Review" },
-  persist: { live: "Save to your library", demo: "Save" },
+  persist: { live: "Save to this browser", demo: "Save" },
 };
 
 const DEMO_STAGES: Stage[] = ["plan", "validate"];
@@ -83,16 +81,11 @@ const LIVE_STAGES: Stage[] = ["access", "plan", "generate", "validate", "evaluat
 
 export function GenerationLoader({
   state,
-  saves = true,
-  storageBlocked = false,
   onCancel,
   onRetry,
   onEditTopic,
 }: {
   state: LoaderState;
-  /** False when no database is configured: results open in this tab and are not saved. */
-  saves?: boolean;
-  storageBlocked?: boolean;
   onCancel: () => void;
   onRetry: () => void;
   onEditTopic: () => void;
@@ -162,7 +155,7 @@ export function GenerationLoader({
           {stages.map((stage) => (
             <StageRow
               key={stage}
-              label={stage === "persist" && !saves ? "Skip saving (no database)" : STAGE_LABELS[stage][state.mode ?? "live"]}
+              label={STAGE_LABELS[stage][state.mode ?? "live"]}
               {...state.stages[stage]}
             />
           ))}
@@ -227,7 +220,6 @@ export function GenerationLoader({
         <div className="mt-5 flex flex-wrap items-center gap-3 text-sm text-ink-soft">
           <p>
             Cancelled. The server stops when the connection closes.
-            {saves ? " If you cancelled during the final save, the explanation may still appear in your library." : null}
           </p>
           <button type="button" onClick={onRetry} className="rounded-full bg-ink px-4 py-2 font-semibold text-paper hover:bg-ink/85">
             Start again
@@ -241,16 +233,9 @@ export function GenerationLoader({
             <Spinner /> Saved. Opening your explanation…
           </p>
         ) : !state.completed.demo ? (
-          storageBlocked ? (
-            <p className="mt-5 rounded-xl border border-danger/25 bg-danger-soft/60 p-4 text-sm text-ink-soft" role="alert">
-              The explanation is ready, but this browser blocked session storage, so it can&apos;t be opened. Nothing is
-              saved without a database. Allow site data for this page and try again.
-            </p>
-          ) : (
-            <p className="mt-5 flex items-center gap-2 text-sm font-medium text-success" role="status">
-              <Spinner /> Ready. Opening your explanation (not saved)…
-            </p>
-          )
+          <p className="mt-5 flex items-center gap-2 text-sm font-medium text-success" role="status">
+            <Spinner /> Saved in this browser. Opening your explanation…
+          </p>
         ) : (
           <div className="mt-5 flex flex-wrap items-center gap-3">
             <p className="text-sm text-ink-soft">Demo fixture ready. Nothing was generated or saved.</p>
@@ -324,7 +309,7 @@ function liveMessage(state: LoaderState): string {
   if (state.status === "failed") return state.error ? `${state.error.title}. ${state.error.message}` : "Generation failed.";
   if (state.status === "completed") {
     if (state.completed?.persisted) return "Saved. Opening your explanation.";
-    return state.completed?.demo ? "Demo explanation ready." : "Ready. Opening your explanation; it is not saved.";
+    return state.completed?.demo ? "Demo explanation ready." : "Saved in this browser. Opening your explanation.";
   }
   const running = Object.entries(state.stages).find(([, s]) => s.status === "running");
   return running?.[1].message ?? "";

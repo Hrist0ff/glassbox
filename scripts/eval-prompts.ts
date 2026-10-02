@@ -1,6 +1,6 @@
 /**
  * Prompt evaluation harness: runs a fixed topic set through the REAL pipeline
- * (real OpenAI calls, costs money; nothing is written to the database) and
+ * (real OpenAI calls, costs money; nothing is saved) and
  * records why attempts were rejected, so prompt changes can be measured.
  *
  *   npm run eval:prompts -- --label baseline
@@ -222,7 +222,7 @@ async function main() {
   mkdirSync(join(dir, "concepts"), { recursive: true });
 
   console.log(`Prompt eval "${label}": ${jobs.length} run(s), concurrency ${concurrency}, models ${JSON.stringify(models)}`);
-  console.log("This makes real OpenAI calls. Nothing is written to the database.\n");
+  console.log("This makes real OpenAI calls. Nothing is saved to the app.\n");
 
   const results = await pool(jobs, concurrency, async (job, index): Promise<EvalRunResult> => {
     const trace: Trace = {

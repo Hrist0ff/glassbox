@@ -1,12 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { generationMode, modelConfig, parseServerEnv } from "@/lib/env";
 
-const supabase = {
-  NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:55421",
-  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "pk",
-  SUPABASE_SECRET_KEY: "sk",
-};
-
 describe("server env", () => {
   it("treats empty values as unset (a copied .env.example parses)", () => {
     const env = parseServerEnv({ GENERATION_MODE: "", OPENAI_API_KEY: "", OPENAI_REASONING_EFFORT: "", GENERATION_DEADLINE_MS: "" });
@@ -15,14 +9,10 @@ describe("server env", () => {
     expect(generationMode(env)).toMatchObject({ mode: "demo" });
   });
 
-  it("goes live with OpenAI, saving only when Supabase is fully configured", () => {
-    expect(generationMode(parseServerEnv({ OPENAI_API_KEY: "k" }))).toEqual({ mode: "live", storage: "none" });
-    expect(generationMode(parseServerEnv({ OPENAI_API_KEY: "k", ...supabase }))).toEqual({ mode: "live", storage: "database" });
-    // Partial Supabase settings are an error, never a silent switch to unsaved mode.
-    expect(generationMode(parseServerEnv({ OPENAI_API_KEY: "k", NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:1" }))).toMatchObject({
-      mode: "misconfigured",
-    });
-    expect(generationMode(parseServerEnv({ OPENAI_API_KEY: "k", GENERATION_MODE: "demo", ...supabase }))).toMatchObject({ mode: "demo" });
+  it("goes live with an OpenAI key, and is misconfigured when live is forced without one", () => {
+    expect(generationMode(parseServerEnv({ OPENAI_API_KEY: "k" }))).toEqual({ mode: "live" });
+    expect(generationMode(parseServerEnv({ GENERATION_MODE: "live" }))).toEqual({ mode: "misconfigured", missing: ["OPENAI_API_KEY"] });
+    expect(generationMode(parseServerEnv({ OPENAI_API_KEY: "k", GENERATION_MODE: "demo" }))).toMatchObject({ mode: "demo" });
   });
 
   it("keeps the deadline below the 300 s route limit", () => {

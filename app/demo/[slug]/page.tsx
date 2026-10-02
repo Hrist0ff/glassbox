@@ -5,7 +5,7 @@ import { parseStoredConcept } from "@/lib/concept/validate";
 import { BUNDLED_FIXTURES, findFixtureBySlug } from "@/lib/fixtures";
 import { conceptToStory } from "@/lib/story/from-concept";
 
-/** Bundled fixtures, served without Supabase or OpenAI (local demo mode). */
+/** Bundled examples, served without OpenAI. */
 export function generateStaticParams() {
   return BUNDLED_FIXTURES.map(({ slug }) => ({ slug }));
 }
@@ -24,7 +24,7 @@ export default async function DemoPage({ params }: PageProps<"/demo/[slug]">) {
   const fixture = findFixtureBySlug(slug);
   if (!fixture) notFound();
 
-  // Same validation path as database content.
+  // Same validation as generated content.
   const parsed = parseStoredConcept(fixture.concept, fixture.concept.id);
   if (!parsed.ok) throw new Error(`Bundled fixture ${slug} is invalid`);
 
@@ -32,9 +32,9 @@ export default async function DemoPage({ params }: PageProps<"/demo/[slug]">) {
     <StoryPlayer
       story={conceptToStory(parsed.concept, {
         subtitle: "Curated example",
-        closing: "This hand-written example is bundled with the app and served without a database.",
+        closing: "This hand-written example is bundled with the app.",
       })}
-      label="Bundled demo"
+      label="Example"
     />
   );
 }

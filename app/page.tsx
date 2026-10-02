@@ -1,22 +1,20 @@
 import Link from "next/link";
-import { Suspense } from "react";
-import { Gallery, GallerySkeleton, StoriesSection } from "@/components/Gallery";
+import { Gallery } from "@/components/Gallery";
 import { StorySnapshot } from "@/components/story/StorySnapshot";
 import { TopicForm, type GenerationAvailability } from "@/components/TopicForm";
 import { LIMITS } from "@/lib/concept/constants";
 import { MAX_ATTEMPTS } from "@/lib/sse/events";
-import { generationMode, serverEnv, supabasePublicConfig } from "@/lib/env";
+import { generationMode, serverEnv } from "@/lib/env";
 import { BUNDLED_FIXTURES } from "@/lib/fixtures";
 import { raftLeaderElection } from "@/lib/fixtures/raft";
 import { stepToStory } from "@/lib/story/from-concept";
 
 export default function HomePage() {
   const mode = generationMode();
-  const databaseConfigured = supabasePublicConfig() !== null;
 
   const availability: GenerationAvailability =
     mode.mode === "live"
-      ? { mode: "live", perHourLimit: serverEnv().RATE_LIMIT_PER_CLIENT_PER_HOUR, saves: mode.storage === "database" }
+      ? { mode: "live", perHourLimit: serverEnv().RATE_LIMIT_PER_CLIENT_PER_HOUR }
       : mode.mode === "demo"
         ? { mode: "demo", demoTopics: BUNDLED_FIXTURES.map((f) => f.concept.title.replace(/ \(simplified\)$/, "")) }
         : { mode: "misconfigured" };
@@ -43,7 +41,7 @@ export default function HomePage() {
 
           <figure className="hidden lg:block">
             <Link
-              href={availability.mode === "demo" || !databaseConfigured ? "/demo/raft-leader-election" : `/concept/${raftLeaderElection.id}`}
+              href="/demo/raft-leader-election"
               className="block overflow-hidden rounded-2xl border border-line bg-arena shadow-[0_24px_48px_-30px_rgba(30,25,15,0.45)] transition-transform hover:-translate-y-0.5"
             >
               <StorySnapshot story={stepToStory(heroStep)} />
@@ -58,11 +56,8 @@ export default function HomePage() {
         </div>
       </section>
 
-      <div id="explore" className="mx-auto max-w-6xl scroll-mt-20 space-y-12 px-4 py-14 sm:px-6">
-        <StoriesSection />
-        <Suspense fallback={<GallerySkeleton />}>
-          <Gallery />
-        </Suspense>
+      <div id="explore" className="mx-auto max-w-6xl scroll-mt-20 px-4 py-14 sm:px-6">
+        <Gallery />
       </div>
 
       <section id="how-it-works" className="scroll-mt-20 border-t border-line bg-paper-raised/60">

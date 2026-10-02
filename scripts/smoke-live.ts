@@ -4,7 +4,7 @@
  *   OPENAI_API_KEY=sk-... npm run smoke:live -- "Raft leader election"
  *
  * Reads .env.local / .env like `next dev` does. Runs the real pipeline
- * (planner → generator → validator → reviewer, with repair) and prints progress. Nothing is written to Supabase: the persist
+ * (planner → generator → validator → reviewer, with repair) and prints progress. Nothing is saved: the persist
  * step only re-validates the accepted concept and prints a summary.
  * Exits 0 without calling anything when OPENAI_API_KEY is not set.
  */
@@ -45,7 +45,7 @@ async function main() {
       const t = (deadline.elapsedMs() / 1000).toFixed(1).padStart(6);
       if (event.type === "progress" && event.stage === "persist") {
         // The pipeline reports its save step; this script's save is a dry run.
-        if (event.state === "running") console.log(`${t}s  persist  skipped (dry run: nothing is written to the database)`);
+        if (event.state === "running") console.log(`${t}s  persist  skipped (dry run: nothing is saved)`);
       } else if (event.type === "progress") {
         console.log(`${t}s  ${event.stage.padEnd(8)} ${event.state.padEnd(7)} ${event.message}`);
       }

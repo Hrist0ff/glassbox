@@ -5,7 +5,7 @@ import { defineConfig, devices } from "@playwright/test";
  *
  *   E2E_BASE_URL       app in demo mode (default http://localhost:3000)
  *   E2E_LIVE_BASE_URL  app in live mode pointed at the mock OpenAI server
- *                      (see scripts/mock-openai.mjs); live specs skip without it
+ *                      (see scripts/mock-openai.ts); live specs skip without it
  *   PW_CHANNEL=chrome  use the installed Chrome instead of Playwright's Chromium
  */
 export default defineConfig({

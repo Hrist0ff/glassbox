@@ -49,6 +49,3 @@ next-env.d.ts
 # prompt-evaluation outputs (may contain model text and token counts)
 /evals/runs/
 
-# supabase CLI local state
-/supabase/.branches/
-/supabase/.temp/

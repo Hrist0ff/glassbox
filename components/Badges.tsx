@@ -3,7 +3,7 @@ type BadgeKind = "curated" | "ai_generated" | "bundled";
 const STYLES: Record<BadgeKind, { label: string; className: string; icon: string }> = {
   curated: { label: "Curated", className: "bg-success-soft text-success", icon: "✓" },
   ai_generated: { label: "AI-generated", className: "bg-[#eee6fc] text-[#5b2bb5]", icon: "✦" },
-  bundled: { label: "Bundled demo", className: "bg-warning-soft text-warning", icon: "▣" },
+  bundled: { label: "Example", className: "bg-warning-soft text-warning", icon: "▣" },
 };
 
 export function Badge({ kind }: { kind: BadgeKind }) {
