@@ -43,7 +43,7 @@ const MAX_ROW_SPACING = 170;
 
 type Region = { x0: number; y0: number; x1: number; y1: number };
 type Placement = "top" | "bottom" | "left" | "right" | "alone";
-type Candidate = { placement: Placement; flow: "row" | "column" };
+type Candidate = { placement: Placement; flow: "row" | "column"; resolve?: boolean };
 
 export type LayoutResult = { steps: Step[]; errors: number; arrangement: string };
 
@@ -110,7 +110,12 @@ function blockSize(list: Size[], flow: "row" | "column"): Size {
 }
 
 /** Node centers for every grid cell (or ring position) used, inside a region. */
-function placeNodes(steps: PlaceableStep[], strategy: LayoutStrategy, region: Region): { at: (node: Omit<PlacedNode, "x" | "y">) => { x: number; y: number }; room: number } {
+function placeNodes(
+  steps: PlaceableStep[],
+  strategy: LayoutStrategy,
+  region: Region,
+  resolveCrossings: boolean,
+): { at: (node: Omit<PlacedNode, "x" | "y">) => { x: number; y: number }; room: number } {
   const nodes = steps.flatMap((s) => s.nodes);
   const half = Math.max(NODE.radius, ...nodes.map((n) => labelHalfWidth(n.label)));
   const top = region.y0 + NODE.radius;
@@ -168,7 +173,7 @@ function placeNodes(steps: PlaceableStep[], strategy: LayoutStrategy, region: Re
     const d = shift.get(`${col}:${row}`);
     return clamp(d ? { x: p.x + d.x, y: p.y + d.y } : p);
   };
-  for (let round = 0; round < 6; round++) {
+  for (let round = 0; round < (resolveCrossings ? 6 : 0); round++) {
     let moved = false;
     for (const step of steps) {
       const byId = new Map(step.nodes.map((n) => [n.id, n]));
@@ -274,7 +279,7 @@ function arrange(steps: PlaceableStep[], strategy: LayoutStrategy, arena: Arena,
   }
 
   const panelAt = placeBlock(slots, candidate.flow, panelRegion);
-  const nodes = hasNodes ? placeNodes(steps, strategy, nodeRegion) : { at: () => ({ x: 0, y: 0 }), room: 2 };
+  const nodes = hasNodes ? placeNodes(steps, strategy, nodeRegion, candidate.resolve ?? true) : { at: () => ({ x: 0, y: 0 }), room: 2 };
   const round = (v: number) => Math.round(v * 10) / 10;
   const clampX = (v: number) => Math.min(arena.width, Math.max(0, round(v)));
   const clampY = (v: number) => Math.min(arena.height, Math.max(0, round(v)));
@@ -303,7 +308,9 @@ function arrange(steps: PlaceableStep[], strategy: LayoutStrategy, arena: Arena,
 /** Lay out steps with semantic placement on an arena. */
 export function placeSteps(steps: PlaceableStep[], strategy: LayoutStrategy, arena: Arena): LayoutResult {
   let best: (LayoutResult & { room: number }) | null = null;
-  for (const candidate of preferred(strategy)) {
+  // Each arrangement is tried with crossings resolved and, in case the moves make things worse, without.
+  const candidates = preferred(strategy).flatMap((c) => [{ ...c, resolve: true }, { ...c, resolve: false }]);
+  for (const candidate of candidates) {
     const { steps: placed, room } = arrange(steps, strategy, arena, candidate);
     const errors = geometryErrors(placed, arena).length;
     const better =

@@ -8,7 +8,6 @@ import { locateQuote } from "@/lib/sources/passages";
 import { BudgetExhaustedError, type Deadline } from "./budget";
 import { LlmError, type LlmClient, type PipelineRole, type StructuredResult, type TokenUsage } from "./llm";
 import {
-  citableIds,
   critiqueFromEvaluation,
   evaluateConcept,
   evaluateStepText,
@@ -284,7 +283,7 @@ export async function runGenerationPipeline(request: GenerationRequest, deps: Pi
       const { content } = layoutGenerated(generated, plan.layout);
       const concept = assembleConcept(content, deps.newId(), { layout: plan.layout, provenance });
       const validation = validateConcept(concept);
-      const citations = citationProblems(generated, citableIds(plan, claims));
+      const citations = citationProblems(generated, provenance.claims.map((c) => c.id));
       // Unknown citations are reported once, with the list of valid ids, by `citationProblems`.
       const errors = validation.ok ? [] : validation.issues.filter((i) => i.severity === "error" && !(citations.length > 0 && i.code === "unknown_claim"));
       if (!validation.ok || citations.length > 0) {

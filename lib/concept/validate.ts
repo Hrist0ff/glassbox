@@ -348,12 +348,19 @@ function checkPanelContent(panel: Panel, path: string, issue: Report, frame: Fra
   }
 }
 
-/** Short text that ends mid-word ("transport-", "no delivery/") was cut to fit and reads as broken. */
-const CUT_OFF = /[\p{L}\p{N}][-/]$/u;
+/**
+ * Short text that ends mid-word ("transport-", "no delivery/") was cut to fit
+ * and reads as broken. A single token ending in "/" ("src/") is a path, not a cut.
+ */
+function cutOff(text: string): boolean {
+  const t = text.trim();
+  if (/[\p{L}\p{N}]-$/u.test(t)) return true;
+  return /[\p{L}\p{N}]\/$/u.test(t) && /\s/.test(t);
+}
 
 function checkCutOff(texts: string[], where: string, path: string, issue: Report): void {
   for (const text of texts) {
-    if (CUT_OFF.test(text.trim())) issue("text_cut_off", `"${text}" in ${where} looks cut off. Use fewer, whole words.`, path);
+    if (cutOff(text)) issue("text_cut_off", `"${text}" in ${where} looks cut off. Use fewer, whole words.`, path);
   }
 }
 
@@ -364,8 +371,9 @@ function duplicates(values: string[]): string[] {
   return [...dup];
 }
 
-/** A clock time, a year, or a month and day at the start of event text. */
-const DATE_IN_TEXT = /^\s*(\d{1,2}:\d{2}\b|\d{3,4}\b(?!\s*(%|[a-z]))|(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}\b)/i;
+/** A clock time, a year set off by punctuation, or a month and day at the start of event text. */
+const DATE_IN_TEXT =
+  /^\s*(\d{1,2}:\d{2}\b|\d{4}\s*([:,–-]|$)|(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|june?|july?|aug(ust)?|sep(t|tember)?|oct(ober)?|nov(ember)?|dec(ember)?)\.?\s+\d{1,2}\b)/i;
 
 function checkTimeline(panel: TimelinePanel, path: string, issue: Report, frame: Frame | undefined): void {
   if (panel.spacing === undefined) return; // version 1: an ordered list of tagged events
@@ -393,9 +401,7 @@ function checkTimeline(panel: TimelinePanel, path: string, issue: Report, frame:
         at,
       );
     }
-    if (!dated && typeof item.at === "number") {
-      issue("date_conflict", `Event "${item.text}" has a time position ("at") but its date is marked ${item.date}.`, at);
-    }
+
     if (typeof item.at === "number" && typeof item.end === "number" && item.end < item.at) {
       issue("timeline_end_before_start", `Event "${item.text}" ends before it starts.`, at);
     }
@@ -533,9 +539,10 @@ function checkHierarchy(panel: HierarchyPanel, path: string, issue: Report): voi
 function checkChart(panel: ChartPanel, path: string, issue: Report, frame: Frame | undefined): void {
   const where = `chart "${panel.id}"`;
   checkCutOff(panel.categories, where, path, issue);
-  // Categories are drawn evenly spaced, so numbered ones (years, months) must be evenly spaced too.
+  // A line chart draws its categories evenly spaced, so points in time (years, months) must be evenly spaced too.
+  // Bar charts compare categories, which need not be evenly spaced ("p50", "p90", "p99").
   const numbers = panel.categories.map((c) => c.match(/-?\d+(?:\.\d+)?/g));
-  if (panel.categories.length >= 3 && numbers.every((n) => n?.length === 1)) {
+  if (panel.chart === "line" && panel.categories.length >= 3 && numbers.every((n) => n?.length === 1)) {
     const values = numbers.map((n) => Number(n![0]));
     const gaps = values.slice(1).map((v, i) => v - values[i]!);
     const increasing = gaps.every((g) => g > 0);

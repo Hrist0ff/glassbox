@@ -7,8 +7,9 @@ import { asRect, BoxText, MARK, mid, toneColor, type PanelGeometry, type Rect } 
 /**
  * Trees (organizations, taxonomies), outlines (trees on narrow screens), and
  * groups (each root a box holding its members). Parent-child lines carry one
- * relation for the whole panel, named in a legend; cross-links are dashed and
- * labeled. Nothing here travels: membership and dependency are structure.
+ * relation for the whole panel, named in a legend; cross-links are dashed,
+ * labeled, and drawn over the boxes so none hides. Nothing here travels:
+ * membership and dependency are structure.
  */
 
 const RELATION_TEXT: Record<HierarchyFrame["relation"], string> = {
@@ -75,18 +76,37 @@ export function HierarchyPanelBody({ g, live, t, rate }: { g: PanelGeometry; liv
             return <path key={`line${cell.key}`} d={d} fill="none" stroke="#888" strokeWidth={1.5} opacity={born(cell)} />;
           })
         : null}
+      {live.cells.map((cell) => {
+        if (!cell.key) return null;
+        const r = box(cell.key);
+        if (!r) return null;
+        const group = frame.boxes[cell.key]?.group ?? false;
+        return (
+          <g key={cell.key} opacity={born(cell)}>
+            {group ? null : (
+              <rect
+                {...asRect(r)}
+                rx={5 * k}
+                strokeWidth={cell.mark ? 2.5 : 1.5}
+                style={{ transition: colorFade(rate, "stroke"), stroke: cell.tone === "normal" || !cell.tone ? "#555" : toneColor(cell), fill: cell.mark ? MARK : "#fff" }}
+              />
+            )}
+            <BoxText text={cell.text} box={r} size={13.5 * k} color={toneColor(cell)} weight={group || cell.mark ? 700 : 400} />
+          </g>
+        );
+      })}
       {(g.entity.links ?? []).map((l, i) => {
         const a = box(l.from);
         const b = box(l.to);
         if (!a || !b || !present.has(l.from) || !present.has(l.to)) return null;
         const pa = mid(a);
         const pb = mid(b);
-        // Rows stacked on top of each other: go around through the gutter on the right, clear of the boxes.
-        const stacked = frame.gutter > 0 && Math.abs(pa.x - pb.x) < Math.max(a.w, b.w) / 2;
+        // Items in the same column: go around on the right, through the gutter, clear of the boxes between them.
+        const stacked = Math.abs(pa.x - pb.x) < Math.max(a.w, b.w) / 2;
         const right = Math.max(a.x + a.w, b.x + b.w);
         const c = stacked
           ? // Longer links bow further out, so links from the same box don't share a curve.
-            { x: right + frame.gutter * k * (0.35 + 0.55 * Math.min(1, Math.abs(pb.y - pa.y) / (150 * k))), y: (pa.y + pb.y) / 2 }
+            { x: right + Math.max(frame.gutter, 40) * k * (0.35 + 0.55 * Math.min(1, Math.abs(pb.y - pa.y) / (150 * k))), y: (pa.y + pb.y) / 2 }
           : { x: (pa.x + pb.x) / 2, y: Math.min(pa.y, pb.y) - 30 * k };
         const end = stacked ? { x: b.x + b.w + 2, y: pb.y } : edgePoint(b, c);
         const start = stacked ? { x: a.x + a.w + 2, y: pa.y } : edgePoint(a, c);
@@ -106,25 +126,6 @@ export function HierarchyPanelBody({ g, live, t, rate }: { g: PanelGeometry; liv
             <text x={apex.x} y={apex.y} fontSize={10.5 * k} textAnchor="middle" fill="#7b3fa0" stroke="#fff" strokeWidth={3 * k} paintOrder="stroke">
               {LINK_TEXT[l.type] ?? l.type}
             </text>
-          </g>
-        );
-      })}
-      {live.cells.map((cell) => {
-        if (!cell.key) return null;
-        const r = box(cell.key);
-        if (!r) return null;
-        const group = frame.boxes[cell.key]?.group ?? false;
-        return (
-          <g key={cell.key} opacity={born(cell)}>
-            {group ? null : (
-              <rect
-                {...asRect(r)}
-                rx={5 * k}
-                strokeWidth={cell.mark ? 2.5 : 1.5}
-                style={{ transition: colorFade(rate, "stroke"), stroke: cell.tone === "normal" || !cell.tone ? "#555" : toneColor(cell), fill: cell.mark ? MARK : "#fff" }}
-              />
-            )}
-            <BoxText text={cell.text} box={r} size={13.5 * k} color={toneColor(cell)} weight={group || cell.mark ? 700 : 400} />
           </g>
         );
       })}

@@ -235,11 +235,11 @@ describe("runGenerationPipeline", () => {
   });
 
   it("drops blank list items from the plan instead of failing every draft", async () => {
-    const sloppy: TeachingPlan = { ...plan, uncertainty: [""], omissions: ["  ", "Duplicates"], assumptions: [{ id: "a1", text: " " }] };
+    const sloppy: TeachingPlan = { ...plan, uncertainty: [""], omissions: ["  ", "Duplicates"] };
     const { llm } = fakeLlm({ extractor: [sloppy], generator: [goodCandidate], evaluator: [pass] });
     const { deps: d, persist } = deps(llm);
     expect(await runGenerationPipeline(topic(), d)).toMatchObject({ ok: true, attempts: 1 });
-    expect(savedConcept(persist).provenance).toMatchObject({ uncertainty: [], omissions: ["Duplicates"], claims: [] });
+    expect(savedConcept(persist).provenance).toMatchObject({ uncertainty: [], omissions: ["Duplicates"] });
   });
 
   it("repairs an incomplete plan once, then gives up with the problems", async () => {

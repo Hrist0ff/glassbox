@@ -508,11 +508,11 @@ export function panelFromGenerated(panel: GeneratedPanel): UnplacedPanel {
   const { lanes, spacing, unit, relations, items, ...rest } = panel;
   return {
     ...rest,
-    items: items.map(({ at, end, ...item }) => ({
-      ...item,
-      ...(at === null ? {} : { at }),
-      ...(end === null ? {} : { end }),
-    })),
+    // An undated or unknown-date event is never placed by time, so a position the generator gave it is dropped.
+    items: items.map(({ at, end, ...item }) => {
+      const dated = item.date === "exact" || item.date === "approximate";
+      return { ...item, ...(at === null || !dated ? {} : { at }), ...(end === null || !dated ? {} : { end }) };
+    }),
     ...(lanes.length > 0 ? { lanes } : {}),
     spacing,
     ...(unit ? { unit } : {}),

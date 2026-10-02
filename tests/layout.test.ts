@@ -72,6 +72,21 @@ describe("layout engine", () => {
     expect(failures).toBe(0);
   });
 
+  it("never makes a valid layout worse by resolving crossings (found by review)", () => {
+    const step: PlaceableStep = {
+      id: "s",
+      text: "x",
+      nodes: [node("n0", 0, 1), node("n1", 3, 0), node("n3", 0, 2), node("n4", 2, 1), node("n5", 3, 2), node("n6", 4, 0), node("n7", 1, 1)],
+      edges: [
+        { id: "a", from: "n6", to: "n0", label: "", animated: false },
+        { id: "b", from: "n3", to: "n1", label: "", animated: false },
+        { id: "c", from: "n7", to: "n1", label: "", animated: false },
+        { id: "d", from: "n1", to: "n6", label: "", animated: false },
+      ],
+    };
+    expect(placeSteps([step], "flow", ARENAS.portrait).errors).toBe(0);
+  });
+
   it("gives panels that never share a step the same place", () => {
     const code = { kind: "code" as const, id: "code", label: "", lines: [{ text: "x = 1", highlight: true }] };
     const later = { kind: "log" as const, id: "log", label: "", items: [{ text: "a", tag: "", color: "neutral" as const, status: "active" as const }] };

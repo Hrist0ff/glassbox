@@ -76,7 +76,7 @@ export type HierarchyFrame = {
   boxes: Record<string, Rect & { depth: number; group: boolean }>;
   /** Group container boxes, by root id (groups style). */
   groups: Record<string, Rect>;
-  /** Width kept on the right for cross-links between stacked rows; 0 when there is none. */
+  /** Width kept on the right for cross-links between items in the same column; 0 without cross-links. */
   gutter: number;
   size: Size;
 };
@@ -319,7 +319,7 @@ function hierarchyFrame(snapshots: readonly HierarchyPanel[], orient: Orientatio
   const groups: HierarchyFrame["groups"] = {};
   const kids = childrenOf(items);
   const extent = treeExtent(items);
-  // Stacked drawings route cross-links through a gutter on the right.
+  // Cross-links between items in the same column are routed through a gutter on the right.
   const gutter = snapshots.some((s) => s.links.length > 0) ? h.linkGutter : 0;
 
   if (last.style === "groups") {
@@ -357,8 +357,8 @@ function hierarchyFrame(snapshots: readonly HierarchyPanel[], orient: Orientatio
         relation: last.relation,
         boxes,
         groups,
-        gutter: 0,
-        size: { width: Math.max(1, roots.length) * (g.width + g.gap) - g.gap, height: top + height + h.legend },
+        gutter,
+        size: { width: Math.max(1, roots.length) * (g.width + g.gap) - g.gap + gutter, height: top + height + h.legend },
       };
     }
     let y = top;
@@ -417,8 +417,8 @@ function hierarchyFrame(snapshots: readonly HierarchyPanel[], orient: Orientatio
       relation: last.relation,
       boxes,
       groups,
-      gutter: 0,
-      size: { width: extent.leaves * tree.slot, height: top + (extent.depth - 1) * tree.level + tree.box.height + h.legend },
+      gutter,
+      size: { width: extent.leaves * tree.slot + gutter, height: top + (extent.depth - 1) * tree.level + tree.box.height + h.legend },
     };
   }
 

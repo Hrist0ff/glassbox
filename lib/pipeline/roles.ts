@@ -430,6 +430,7 @@ export function planProblems(plan: TeachingPlan, context: { claimIds?: string[];
 
   const ids = [...plan.entities.map((e) => e.id), ...plan.panels.map((p) => p.id)];
   for (const dup of ids.filter((v, i) => ids.indexOf(v) !== i)) problems.push(`Id "${dup}" is used for more than one entity or panel.`);
+  for (const a of plan.assumptions) if (!meaningful(a.text, 3)) problems.push(`Assumption "${a.id}" has no text; state it or remove it.`);
   const assumptionIds = plan.assumptions.map((a) => a.id);
   for (const dup of assumptionIds.filter((v, i) => assumptionIds.indexOf(v) !== i)) problems.push(`Assumption id "${dup}" is used twice.`);
   const claimIds = new Set(context.claimIds ?? []);
@@ -884,9 +885,4 @@ export const PROMPTS: Record<string, string> = {
   evaluator: EVALUATOR_INSTRUCTIONS,
   textEvaluator: TEXT_REVIEWER_INSTRUCTIONS,
 };
-
-/** Claim ids the generator may cite: verified claims and plan assumptions. */
-export function citableIds(plan: TeachingPlan, claims: VerifiedClaims | null): string[] {
-  return [...(claims?.claims.map((c) => c.id) ?? []), ...plan.assumptions.map((a) => a.id)];
-}
 

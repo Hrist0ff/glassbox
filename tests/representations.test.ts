@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ARENAS } from "@/lib/concept/constants";
 import { chartScale, framesFor, timelinePoint, type TimelineFrame } from "@/lib/concept/frames";
-import type { ChartPanel, ComparisonPanel, Concept, HierarchyPanel, TimelinePanel } from "@/lib/concept/schema";
+import { panelFromGenerated, panelToGenerated, type ChartPanel, type ComparisonPanel, type Concept, type HierarchyPanel, type TimelinePanel } from "@/lib/concept/schema";
 import { validateConcept } from "@/lib/concept/validate";
 import { compoundInterest } from "@/lib/fixtures/compound-interest";
 import { httpVersions } from "@/lib/fixtures/http-versions";
@@ -41,12 +41,26 @@ describe("timelines", () => {
       p.items = p.items.map((item) => ({ ...item, text: `${item.tag} ${item.text}`.slice(0, 24), tag: "", date: "unknown", at: undefined, end: undefined }));
     });
     expect(errorCodes(inText)).toContain("date_in_text");
+    // Words that merely start like a month, and plain numbers, are not dates.
+    const words = edit<TimelinePanel>(incidentTimeline, (p) => {
+      p.spacing = "ordered";
+      p.relations = [];
+      p.items = p.items.map((item, i) => ({ ...item, text: ["Separate 2 teams", "Marketing 3 regions", "404 errors rise", "2048 users join"][i % 4]!, tag: "", date: "none", at: undefined, end: undefined }));
+    });
+    expect(errorCodes(words)).not.toContain("date_in_text");
     const stages = edit<TimelinePanel>(incidentTimeline, (p) => {
       p.spacing = "ordered";
       p.relations = [];
       p.items = p.items.map((item) => ({ ...item, tag: "", date: "none", at: undefined, end: undefined }));
     });
     expect(errorCodes(stages)).toEqual([]);
+  });
+
+  it("drops time positions the generator gave to undated events", () => {
+    const wire = panelToGenerated(last<TimelinePanel>(incidentTimeline));
+    if (wire.kind !== "timeline") throw new Error("expected a timeline");
+    const back = panelFromGenerated({ ...wire, items: wire.items.map((item) => ({ ...item, date: "none" as const, tag: "", at: 3, end: 4 })) });
+    expect(back.kind === "timeline" && back.items.every((item) => item.at === undefined && item.end === undefined)).toBe(true);
   });
 
   it("allows proportional spacing only when every event has a known time", () => {
@@ -100,6 +114,9 @@ describe("comparisons", () => {
   it("rejects text cut off mid-word", () => {
     expect(errorCodes(edit<ComparisonPanel>(httpVersions, (p) => (p.criteria[0]!.cells[0]!.text = "no transport-")))).toContain("text_cut_off");
     expect(errorCodes(edit<ComparisonPanel>(httpVersions, (p) => (p.criteria[0]!.cells[0]!.text = "HTTP/1.1")))).not.toContain("text_cut_off");
+    expect(errorCodes(edit<ComparisonPanel>(httpVersions, (p) => (p.criteria[0]!.cells[0]!.text = "no delivery/")))).toContain("text_cut_off");
+    // A path is not a cut.
+    expect(errorCodes(edit<HierarchyPanel>(usGovernment, (p) => (p.items[1]!.text = "src/")))).not.toContain("text_cut_off");
   });
 
   it("keeps the same alternatives in every step", () => {
@@ -175,10 +192,12 @@ describe("charts", () => {
     expect(cells.find((c) => c.key === "0:3")).toMatchObject({ text: "no data", meta: { value: null } });
   });
 
-  it("rejects unevenly spaced numbered categories, which would be drawn evenly", () => {
+  it("rejects unevenly spaced points in time on a line chart, but not bar categories", () => {
     const uneven = edit<ChartPanel>(compoundInterest, (p) => (p.categories = ["0", "1", "2", "12", "120", "240", "360"]));
     expect(errorCodes(uneven)).toContain("chart_uneven_categories");
     expect(errorCodes(compoundInterest)).toEqual([]);
+    const bars = edit<ChartPanel>(uneven, (p) => (p.chart = "bar"));
+    expect(errorCodes(bars)).not.toContain("chart_uneven_categories");
   });
 
   it("uses one axis for every value the chart ever shows", () => {

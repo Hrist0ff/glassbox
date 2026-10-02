@@ -74,6 +74,8 @@ describe("plan checks", () => {
     // A language may be named in English or in the language itself.
     expect(planProblems({ ...plan, language: "Deutsch" }, { language: "German" })).toEqual([]);
     expect(planProblems({ ...plan, essentials: ["n/a"] }).join(" ")).toMatch(/essentials/);
+    // A blank assumption could be cited but would be dropped from the provenance: the planner must state or remove it.
+    expect(planProblems({ ...plan, assumptions: [{ id: "a1", text: " " }] }).join(" ")).toMatch(/Assumption "a1" has no text/);
   });
 });
 
