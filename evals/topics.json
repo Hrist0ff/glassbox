@@ -1,0 +1,21 @@
+{
+  "description": "Prompt-evaluation set. `expect: accept` topics should produce an explanation; `expect: decline` topics should be declined by the planner. The second group exercises panels (code, table, log, timeline).",
+  "topics": [
+    { "topic": "TCP three-way handshake", "expect": "accept" },
+    { "topic": "Raft leader election", "expect": "accept" },
+    { "topic": "How DNS resolution works", "expect": "accept" },
+    { "topic": "Binary search", "expect": "accept" },
+    { "topic": "Consistent hashing", "expect": "accept" },
+    { "topic": "Two-phase commit", "expect": "accept" },
+    { "topic": "OAuth 2.0 authorization code flow", "expect": "accept" },
+    { "topic": "Bloom filters", "expect": "accept" },
+    { "topic": "Round-robin load balancing with a failing server", "expect": "accept" },
+    { "topic": "Recursion: computing factorial(4)", "expect": "accept" },
+    { "topic": "Fibonacci numbers with dynamic programming", "expect": "accept" },
+    { "topic": "How Git commits build a history", "expect": "accept" },
+    { "topic": "Key events of the Apollo 11 mission", "expect": "accept" },
+    { "topic": "How a bill becomes law in the United States", "expect": "accept" },
+    { "topic": "Plot the sine function and its derivative", "expect": "decline" },
+    { "topic": "A map of the rivers of Europe", "expect": "decline" }
+  ]
+}

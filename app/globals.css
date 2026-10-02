@@ -1,0 +1,109 @@
+@import "tailwindcss";
+
+@theme {
+  --color-paper: #f6f4ee;
+  --color-paper-raised: #fdfcf9;
+  --color-paper-sunk: #eeebe3;
+  --color-ink: #1c1a17;
+  --color-ink-soft: #46423b;
+  --color-ink-muted: #686256;
+  --color-ink-faint: #a39d92;
+  --color-line: #e2ded4;
+  --color-line-strong: #cbc4b6;
+  --color-arena: #fffefb;
+
+  --color-accent: #2648c9;
+  --color-accent-soft: #e2e9fd;
+  --color-success: #147a3b;
+  --color-success-soft: #dcf1e2;
+  --color-warning: #94490a;
+  --color-warning-soft: #fcefd3;
+  --color-danger: #b42318;
+  --color-danger-soft: #fbe2e0;
+  --color-focus: #2648c9;
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --font-display: var(--font-newsreader), ui-serif, Georgia, serif;
+
+  /* Story player (/learn): the plain Bootstrap 3 look of "The Secret Lives of Data". */
+  --font-classic: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-courier: "Courier New", Courier, monospace;
+  --animate-story-fade: story-fade 600ms ease-out both;
+
+  @keyframes story-fade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+}
+
+:root {
+  color-scheme: light;
+
+  /* SVG arena tokens (read by components/player/SceneArena.tsx). */
+  --arena-bg: var(--color-arena);
+  --arena-dot: #e6e1d6;
+  --edge-static: #8a857d;
+  --edge-live: #34302a;
+  --pulse: var(--color-accent);
+  --pill-bg: #fffefb;
+  --ink: var(--color-ink);
+  --ink-muted: var(--color-ink-muted);
+}
+
+html {
+  background: var(--color-paper);
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: #c9d6fb;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+@utility kbd {
+  display: inline-flex;
+  min-width: 1.4rem;
+  justify-content: center;
+  border: 1px solid var(--color-line-strong);
+  border-bottom-width: 2px;
+  border-radius: 0.35rem;
+  background: var(--color-paper-raised);
+  padding: 0 0.3rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  color: var(--color-ink-soft);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Player arena: dot grid behind the transparent SVG, so letterboxing stays seamless. */
+@utility arena-frame {
+  background-color: var(--arena-bg);
+  background-image: radial-gradient(circle at 1.5px 1.5px, var(--arena-dot) 1.2px, transparent 1.4px);
+  background-size: 22px 22px;
+}
