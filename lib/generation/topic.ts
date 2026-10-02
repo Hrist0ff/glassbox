@@ -13,5 +13,9 @@ export function normalizeTopic(raw: string): { ok: true; topic: string } | { ok:
   if (!/\p{L}/u.test(topic)) {
     return { ok: false, message: "The topic needs at least one letter." };
   }
+  // Links are not opened, so a link alone would be explained from its words, as if the page had been read.
+  if (/(https?:\/\/|www\.)\S+/i.test(topic)) {
+    return { ok: false, message: "Glassbox can't open links. Describe the topic in words, or paste the page's text under “Visualize my information”." };
+  }
   return { ok: true, topic };
 }

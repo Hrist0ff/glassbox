@@ -1,11 +1,12 @@
 import type { z } from "zod";
 
 /**
- * Provider-neutral structured-output call used by the three pipeline roles.
+ * Provider-neutral structured-output call used by the pipeline roles.
  * The OpenAI implementation lives in `openai-client.ts`; tests use fakes.
  */
 
-export type PipelineRole = "extractor" | "generator" | "evaluator";
+/** `extractor` plans, `reader` extracts claims from supplied material, `writer` writes step explanations. */
+export type PipelineRole = "extractor" | "reader" | "generator" | "writer" | "evaluator";
 
 export type TokenUsage = { inputTokens: number; outputTokens: number };
 

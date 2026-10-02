@@ -47,7 +47,7 @@ const compare = (id: string, index: number, label: string, animated: boolean): V
 });
 
 export const binarySearch: Concept = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   id: "6a1f2c3e-0b4d-4e5f-8a6b-1c2d3e4f5a03",
   title: "Binary search",
   description:

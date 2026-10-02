@@ -1,7 +1,9 @@
 import { zodTextFormat } from "openai/helpers/zod";
 import { describe, expect, it } from "vitest";
-import { panelBox } from "@/lib/concept/geometry";
-import { GeneratedConceptContentSchema, toConceptContent, toGeneratedContent, type Concept } from "@/lib/concept/schema";
+import { simpleSize } from "@/lib/concept/frames";
+import { centeredBox } from "@/lib/concept/geometry";
+import { layoutGenerated, toGeneratedContent } from "@/lib/concept/layout";
+import { GeneratedConceptContentSchema, type Concept, type Step } from "@/lib/concept/schema";
 import { validateConcept } from "@/lib/concept/validate";
 import { cameraAt, compileStory, worldAt } from "@/lib/story/engine";
 import { conceptToStory } from "@/lib/story/from-concept";
@@ -19,12 +21,23 @@ describe("panels in the scene contract", () => {
     expect(result.ok).toBe(true);
   });
 
-  it("round-trips through the strict wire format, dropping defaults", () => {
+  it("round-trips through the strict wire format (no coordinates) and the layout engine", () => {
     const wire = toGeneratedContent(panelsConcept);
     expect(GeneratedConceptContentSchema.parse(wire)).toEqual(wire);
-    const back = toConceptContent(wire);
-    expect(back.steps[0]).toEqual(panelsConcept.steps[0]);
-    expect(back.steps[1]).toEqual(panelsConcept.steps[1]);
+    expect(JSON.stringify(wire)).not.toMatch(/"x":|"y":/);
+    const { content } = layoutGenerated(wire, "code_beside_data");
+    // Everything but positions survives; positions are recomputed and valid.
+    const strip = (step: Step) => ({
+      ...step,
+      nodes: step.nodes.map(({ id, label, shape, color, status }) => ({ id, label, shape, color, status })),
+      panels: step.panels?.map(({ x: _x, y: _y, ...panel }) => (void [_x, _y], panel)),
+    });
+    const original = panelsConcept.steps.map(strip);
+    const back = content.steps.map(strip);
+    expect(back.map((s) => s.panels?.map((p) => p.id))).toEqual(original.map((s) => s.panels?.map((p) => p.id)));
+    expect(back[1]!.nodes).toEqual(original[1]!.nodes);
+    expect(back[1]!.edges).toEqual(original[1]!.edges);
+    expect(validateConcept({ ...panelsConcept, ...content, layout: "code_beside_data" }).ok).toBe(true);
     expect(() => zodTextFormat(GeneratedConceptContentSchema, "concept_scenes")).not.toThrow();
   });
 
@@ -103,7 +116,8 @@ describe("panels in the story player", () => {
   });
 
   it("zooms onto the focused panel and back out", () => {
-    const box = panelBox(panelsConcept.steps[2]!.panels![2]!);
+    const table = panelsConcept.steps[2]!.panels![2]!;
+    const box = centeredBox(table, simpleSize(table));
     const camera = cameraAt(end(2), Infinity);
     expect(camera.x0).toBeLessThan(box.x0 / 10);
     expect(camera.x1).toBeGreaterThan(box.x1 / 10);

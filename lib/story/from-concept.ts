@@ -1,5 +1,7 @@
-import { ARENA } from "@/lib/concept/constants";
+import { ARENAS, type Arena } from "@/lib/concept/constants";
+import { eventKey, framesFor, isFramed, type Frame } from "@/lib/concept/frames";
 import { wrapLabel } from "@/lib/concept/geometry";
+import { relayout } from "@/lib/concept/layout";
 import type { ColorToken, Concept, Step as ConceptStep, Panel, PanelItem, VisualEdge, VisualNode } from "@/lib/concept/schema";
 import { add, append, dot, link, packet, remove, retext, send, set, truncate, zoom } from "./dsl";
 import type { Beat, Cell, Entity, EntityPatch, Ink, LinkEntity, NodeEntity, PanelEntity, Step, Story, Tone } from "./types";
@@ -11,7 +13,7 @@ import type { Beat, Cell, Entity, EntityPatch, Ink, LinkEntity, NodeEntity, Pane
  *
  * Each concept step becomes a beat whose script moves the scene from the
  * previous snapshot to this one: nodes fade out, change, or appear, panels
- * (logs, code, tables, timelines) update their cells or append new ones,
+ * update their cells or append new ones (keyed panels fade new items in),
  * static edges become lines, and animated edges become messages that travel
  * once, in rounds. A step's focus zooms the camera, and its timing decides
  * whether the scene changes before or after the messages arrive.
@@ -47,6 +49,9 @@ const TONE_FOR: Record<ColorToken, Tone> = {
   danger: "bad",
 };
 
+const toneOf = (item: { color: ColorToken; status: "active" | "inactive" }): Tone =>
+  item.status === "inactive" ? "muted" : TONE_FOR[item.color];
+
 /** Concept node, edge, and panel ids may collide with each other; story ids may not. */
 const nodeId = (id: string) => `n-${id}`;
 const edgeId = (id: string) => `e-${id}`;
@@ -54,22 +59,41 @@ const panelId = (id: string) => `p-${id}`;
 
 const toCell = (item: PanelItem): Cell => ({
   text: item.text,
-  tone: item.status === "inactive" ? "muted" : TONE_FOR[item.color],
+  tone: toneOf(item),
   ...(item.tag ? { tag: item.tag } : {}),
 });
 
-function toPanel(panel: Panel): PanelEntity {
+/** What the converter needs to know about the whole explanation. */
+type Context = {
+  arena: Arena;
+  frames: Map<string, Frame>;
+  /** Laid-out concepts reserve each panel's largest size. */
+  reserve: boolean;
+  /** Where chart numbers come from, for the note under observed charts. */
+  sourcesConsulted: boolean;
+};
+
+const formatNumber = (value: number) => String(Number(value.toPrecision(6)));
+
+function chartNote(data: "observed" | "illustrative", sourcesConsulted: boolean): string {
+  if (data === "illustrative") return "Illustrative numbers, made up for this example";
+  return sourcesConsulted ? "Figures from the supplied material" : "Figures from the AI model's general knowledge, not checked against a source";
+}
+
+function toPanel(panel: Panel, ctx: Context): PanelEntity {
+  const frame = ctx.frames.get(panel.id);
   const base = {
     kind: "panel" as const,
     id: panelId(panel.id),
-    x: (panel.x / ARENA.width) * 100,
-    y: (panel.y / ARENA.height) * 100,
+    x: (panel.x / ctx.arena.width) * 100,
+    y: (panel.y / ctx.arena.height) * 100,
     title: panel.label,
+    scale: { x: ctx.arena.width / 100, y: ctx.arena.height / 100 },
+    ...(frame && ctx.reserve && !isFramed(panel) ? { box: frame.size } : {}),
   };
   switch (panel.kind) {
     case "log":
-    case "timeline":
-      return { ...base, variant: panel.kind, cells: panel.items.map(toCell) };
+      return { ...base, variant: "log", cells: panel.items.map(toCell) };
     case "code":
       return { ...base, variant: "code", cells: panel.lines.map((line) => (line.highlight ? { text: line.text, mark: true } : { text: line.text })) };
     case "table":
@@ -80,16 +104,76 @@ function toPanel(panel: Panel): PanelEntity {
         rows: panel.rows.map((row) => row.label),
         cells: panel.rows.flatMap((row) => row.cells.map(toCell)),
       };
+    case "timeline":
+      if (panel.spacing === undefined || frame?.kind !== "timeline") {
+        return { ...base, variant: "timeline", cells: panel.items.map(toCell) };
+      }
+      return {
+        ...base,
+        variant: "timeline",
+        frame,
+        cells: panel.items.map((item, i) => ({
+          ...toCell(item),
+          key: eventKey(item, i),
+          meta: { panel: "timeline", lane: item.lane ?? 0, date: item.date ?? "exact", end: typeof item.end === "number" },
+        })),
+        links: (panel.relations ?? []).map((r) => ({ ...r })),
+      };
+    case "comparison":
+      return {
+        ...base,
+        variant: "comparison",
+        ...(frame ? { frame } : {}),
+        cells: panel.criteria.flatMap((criterion) =>
+          criterion.cells.map((cell, c) => ({
+            text: cell.text,
+            tone: toneOf(cell),
+            ...(cell.color === "primary" && cell.status === "active" ? { mark: true } : {}),
+            key: `${criterion.id}:${c}`,
+            meta: { panel: "comparison" as const, criterion: criterion.id, alternative: c, missing: cell.missing },
+          })),
+        ),
+      };
+    case "hierarchy":
+      return {
+        ...base,
+        variant: "hierarchy",
+        ...(frame ? { frame } : {}),
+        cells: panel.items.map((item) => ({
+          text: item.text,
+          tone: toneOf(item),
+          ...(item.color === "primary" && item.status === "active" ? { mark: true } : {}),
+          key: item.id,
+          meta: { panel: "hierarchy" as const, parent: item.parent },
+        })),
+        links: panel.links.map((l) => ({ ...l })),
+      };
+    case "chart":
+      return {
+        ...base,
+        variant: "chart",
+        ...(frame ? { frame } : {}),
+        note: chartNote(panel.data, ctx.sourcesConsulted),
+        cells: panel.series.flatMap((series, s) =>
+          series.values.slice(0, panel.revealed).map((value, c) => ({
+            text: value === null ? "no data" : formatNumber(value),
+            tone: TONE_FOR[series.color],
+            ...(panel.highlight === c ? { mark: true } : {}),
+            key: `${s}:${c}`,
+            meta: { panel: "chart" as const, series: s, category: c, value },
+          })),
+        ),
+      };
   }
 }
 
-function toNode(node: VisualNode): NodeEntity {
+function toNode(node: VisualNode, arena: Arena): NodeEntity {
   const active = node.status === "active";
   return {
     kind: "node",
     id: nodeId(node.id),
-    x: (node.x / ARENA.width) * 100,
-    y: (node.y / ARENA.height) * 100,
+    x: (node.x / arena.width) * 100,
+    y: (node.y / arena.height) * 100,
     r: NODE_RADIUS,
     // Inactive nodes are gray, like the original's stopped servers; the label says why.
     fill: active ? INK_FOR[node.color] : "gray",
@@ -141,7 +225,7 @@ function storyIds(step: ConceptStep) {
 }
 
 /** Everything that changes in the scene itself, grouped so the step's timing can order it. */
-function sceneChanges(prev: ConceptStep | null, next: ConceptStep) {
+function sceneChanges(prev: ConceptStep | null, next: ConceptStep, ctx: Context) {
   const removals: Step[] = [];
   const updates: Step[] = [];
   const additions: Step[] = [];
@@ -150,10 +234,10 @@ function sceneChanges(prev: ConceptStep | null, next: ConceptStep) {
 
   const prevIds = prev ? storyIds(prev) : nodeId;
   const nextIds = storyIds(next);
-  const prevNodes = new Map((prev?.nodes ?? []).map((n) => [n.id, toNode(n)]));
-  const nextNodes = new Map(next.nodes.map((n) => [n.id, toNode(n)]));
-  const prevPanels = new Map((prev?.panels ?? []).map((p) => [p.id, toPanel(p)]));
-  const nextPanels = new Map((next.panels ?? []).map((p) => [p.id, toPanel(p)]));
+  const prevNodes = new Map((prev?.nodes ?? []).map((n) => [n.id, toNode(n, ctx.arena)]));
+  const nextNodes = new Map(next.nodes.map((n) => [n.id, toNode(n, ctx.arena)]));
+  const prevPanels = new Map((prev?.panels ?? []).map((p) => [p.id, toPanel(p, ctx)]));
+  const nextPanels = new Map((next.panels ?? []).map((p) => [p.id, toPanel(p, ctx)]));
   const prevLinks = new Map((prev?.edges ?? []).filter((e) => !e.animated).map((e) => [e.id, toLink(e, prevIds)]));
   const nextLinks = new Map(next.edges.filter((e) => !e.animated).map((e) => [e.id, toLink(e, nextIds)]));
 
@@ -171,7 +255,6 @@ function sceneChanges(prev: ConceptStep | null, next: ConceptStep) {
     }
   }
 
-  // Panels that stay keep their records: changed ones update in place, new ones are appended.
   for (const [id, panel] of nextPanels) {
     const before = prevPanels.get(id);
     if (!before) {
@@ -182,6 +265,12 @@ function sceneChanges(prev: ConceptStep | null, next: ConceptStep) {
     const { cells, ...frame } = panel;
     const patch = changes(beforeFrame as Entity, frame as Entity);
     if (Object.keys(patch).length > 0) updates.push(set(panel.id, patch));
+    // Keyed panels swap their cells; kept items stay, new ones fade in.
+    if (cells.some((cell) => cell.key !== undefined) || beforeCells.some((cell) => cell.key !== undefined)) {
+      if (JSON.stringify(cells) !== JSON.stringify(beforeCells)) appends.push({ do: "cells", of: panel.id, cells });
+      continue;
+    }
+    // Other panels keep their records: changed ones update in place, new ones are appended.
     if (beforeCells.length > cells.length) removals.push(truncate(panel.id, cells.length));
     const kept = Math.min(beforeCells.length, cells.length);
     for (let i = 0; i < kept; i++) {
@@ -238,12 +327,13 @@ function staggered(steps: Step[], at: number, timed: Timed[]): number {
  * Script that turns the scene of `prev` (or an empty stage) into the scene of `next`.
  *
  * `changes_first` (default): the scene changes, then messages travel.
- * `messages_first`: new things appear, messages travel, and only then do
- * receivers change, so a record lands in a log as its message arrives.
+ * `messages_first`: new things appear, every round of messages travels, and
+ * only then do receivers change, so a record lands in a log as its message
+ * arrives. Nothing changes between rounds.
  */
-function transition(prev: ConceptStep | null, next: ConceptStep): Step[] {
+function transition(prev: ConceptStep | null, next: ConceptStep, ctx: Context): Step[] {
   const timed: Timed[] = [];
-  const scene = sceneChanges(prev, next);
+  const scene = sceneChanges(prev, next, ctx);
   const ids = storyIds(next);
 
   const hasMessages = next.edges.some((edge) => edge.animated);
@@ -272,14 +362,25 @@ function transition(prev: ConceptStep | null, next: ConceptStep): Step[] {
 
   // The camera moves first, so the reader sees where the step happens, but
   // only once what it zooms onto exists.
-  const focus = next.focus?.map(ids) ?? null;
-  const prevFocus = prev?.focus?.map(storyIds(prev)) ?? null;
+  const focus = focusOf(next, ctx)?.map(ids) ?? null;
+  const prevFocus = prev ? (focusOf(prev, ctx)?.map(storyIds(prev)) ?? null) : null;
   if (JSON.stringify(focus) !== JSON.stringify(prevFocus)) {
     const appears = timed.filter(({ step }) => step.do === "add" && focus?.includes(step.entity.id)).map(({ at }) => at + 50);
     timed.push({ at: Math.max(0, ...appears), step: zoom(focus) });
   }
 
   return sequence(timed.map(({ at, step }) => ({ at: at + LEAD_IN_MS, step })));
+}
+
+/**
+ * Where the camera looks. In laid-out explanations, a step with panels and no
+ * nodes (a comparison, a chart, a timeline on its own) zooms onto its panels,
+ * so they fill the stage instead of sitting small in the middle.
+ */
+function focusOf(step: ConceptStep, ctx: Context): string[] | null {
+  if (step.focus) return step.focus;
+  if (ctx.reserve && step.nodes.length === 0 && (step.panels ?? []).length > 0) return step.panels!.map((p) => p.id);
+  return null;
 }
 
 /** Notes as captions: whole when short, otherwise in groups of sentences. */
@@ -304,14 +405,26 @@ export type ConceptStoryOptions = {
   subtitle: string;
   /** Optional last caption, e.g. how the explanation was made. */
   closing?: string;
+  /** Arena the steps are laid out on. Default: the landscape arena the concept is stored in. */
+  arena?: Arena;
+  /** Steps laid out on `arena` (see `relayout`); default: the concept's own steps. */
+  steps?: ConceptStep[];
 };
 
+function contextFor(concept: Concept, steps: ConceptStep[], arena: Arena): Context {
+  const reserve = concept.layout !== undefined;
+  return { arena, frames: framesFor(steps, arena, reserve), reserve, sourcesConsulted: concept.provenance?.sourcesConsulted ?? false };
+}
+
 export function conceptToStory(concept: Concept, options: ConceptStoryOptions): Story {
+  const arena = options.arena ?? ARENAS.landscape;
+  const steps = options.steps ?? concept.steps;
+  const ctx = contextFor(concept, steps, arena);
   // Concept text is plain: `plain` keeps a stray `*` or `[x|y]` in generated text literal.
   const beats: Beat[] = [{ say: concept.description, plain: true, size: "md" }];
-  concept.steps.forEach((step, i) => {
-    beats.push({ say: step.text, plain: true, run: transition(concept.steps[i - 1] ?? null, step) });
-    if (step.notes) for (const caption of noteCaptions(step.notes)) beats.push({ say: caption, plain: true, size: "md" });
+  steps.forEach((step, i) => {
+    beats.push({ say: step.text, plain: true, run: transition(steps[i - 1] ?? null, step, ctx), step: step.id });
+    if (step.notes) for (const caption of noteCaptions(step.notes)) beats.push({ say: caption, plain: true, size: "md", step: step.id });
   });
   if (options.closing) beats.push({ say: options.closing, plain: true, size: "md" });
 
@@ -327,13 +440,33 @@ export function conceptToStory(concept: Concept, options: ConceptStoryOptions): 
   };
 }
 
+/**
+ * The stored landscape story, and a portrait one when the explanation can be
+ * laid out again for tall screens. Both have the same beats, so the player
+ * can switch between them without losing its place.
+ */
+export function conceptStories(concept: Concept, options: Omit<ConceptStoryOptions, "arena" | "steps">): { landscape: Story; portrait: Story | null } {
+  const portraitSteps = relayout(concept, ARENAS.portrait);
+  return {
+    landscape: conceptToStory(concept, options),
+    portrait: portraitSteps ? conceptToStory(concept, { ...options, arena: ARENAS.portrait, steps: portraitSteps }) : null,
+  };
+}
+
 /** A one-beat story showing a single concept step, for thumbnails. */
-export function stepToStory(step: ConceptStep): Story {
+export function stepToStory(step: ConceptStep, concept?: Pick<Concept, "layout" | "provenance"> & { steps: ConceptStep[] }): Story {
+  const steps = concept?.steps ?? [step];
+  const ctx: Context = {
+    arena: ARENAS.landscape,
+    frames: framesFor(steps, ARENAS.landscape, concept?.layout !== undefined),
+    reserve: concept?.layout !== undefined,
+    sourcesConsulted: concept?.provenance?.sourcesConsulted ?? false,
+  };
   return {
     slug: "step",
     title: "",
     subtitle: "",
     summary: "",
-    chapters: [{ id: "step", title: "", beats: [{ say: " ", run: transition(null, step) }] }],
+    chapters: [{ id: "step", title: "", beats: [{ say: " ", run: transition(null, step, ctx) }] }],
   };
 }

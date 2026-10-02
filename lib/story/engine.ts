@@ -194,6 +194,13 @@ function apply(world: World, { at, action, key }: Scheduled): void {
       if (live) live.cells = live.cells.slice(0, action.keep);
       return;
     }
+    case "cells": {
+      const live = touch(world, action.of);
+      if (!live) return;
+      const born = new Map(live.cells.flatMap((cell) => (cell.key === undefined ? [] : [[cell.key, cell.born] as const])));
+      live.cells = action.cells.map((cell) => ({ ...cell, born: (cell.key !== undefined ? born.get(cell.key) : undefined) ?? at }));
+      return;
+    }
     case "send":
       world.messages.push({
         key,

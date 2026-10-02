@@ -4,7 +4,13 @@ import { assertDevOnly, listEvalRuns } from "@/lib/evals/load";
 
 export const metadata: Metadata = { title: "Prompt evals (dev)", robots: { index: false } };
 
-const pct = (v: number | null) => (v === null ? "n/a" : `${Math.round(v * 100)}%`);
+const pct = (v: number | null | undefined) => (v === null || v === undefined ? "n/a" : `${Math.round(v * 100)}%`);
+
+/** Mean of the grader's dimension means, for a one-number summary (older runs have none). */
+function meanGrade(quality: Record<string, number | null | undefined> | undefined): string {
+  const values = Object.values(quality ?? {}).filter((v): v is number => typeof v === "number");
+  return values.length ? (values.reduce((a, b) => a + b, 0) / values.length).toFixed(2) : "n/a";
+}
 
 export default function EvalRunsPage() {
   assertDevOnly();
@@ -23,7 +29,7 @@ export default function EvalRunsPage() {
           <table className="w-full text-left text-sm">
             <thead className="border-b border-line text-xs uppercase tracking-wide text-ink-muted">
               <tr>
-                {["Run", "Generator prompt", "Accepted", "First-attempt pass", "Mean attempts", "Declines", "Cost"].map((h) => (
+                {["Run", "Generator prompt", "Accepted", "First-attempt pass", "Mean attempts", "Declines", "Representation ok", "Mean grade", "Cost"].map((h) => (
                   <th key={h} className="px-4 py-3 font-semibold">
                     {h}
                   </th>
@@ -43,6 +49,8 @@ export default function EvalRunsPage() {
                   <td className="px-4 py-3">{pct(run.metrics.firstAttemptPassRate)}</td>
                   <td className="px-4 py-3">{run.metrics.meanAttemptsWhenAccepted?.toFixed(2) ?? "n/a"}</td>
                   <td className="px-4 py-3">{pct(run.metrics.correctDeclineRate)}</td>
+                  <td className="px-4 py-3">{pct(run.metrics.representationMatchRate)}</td>
+                  <td className="px-4 py-3">{meanGrade(run.metrics.quality)}</td>
                   <td className="px-4 py-3">{run.metrics.totalCostUsd === null ? "n/a" : `$${run.metrics.totalCostUsd.toFixed(4)}`}</td>
                 </tr>
               ))}

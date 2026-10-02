@@ -3,36 +3,53 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import type { Supplement } from "@/lib/concept/schema";
 import {
   initialLoaderState,
   loaderReducer,
   streamGeneration,
   type LoaderState,
+  type RequestKind,
   type StageStatus,
 } from "@/lib/generation/client";
 import { saveExplanation } from "@/lib/library";
 import type { Stage } from "@/lib/sse/events";
 
+/** One request to start: the body for POST /api/generate, plus how to show and keep its result. */
+export type RunSpec = {
+  body: Record<string, unknown>;
+  /** Shown while it runs: the topic, the material's title, or the step being explored. */
+  label: string;
+  kind: RequestKind;
+};
+
 /**
  * Drives one generation request and exposes its state. Requests start from
  * user actions (submit / retry), never from effects, so React Strict Mode
  * cannot double-submit, and a second start while one is running is ignored.
+ *
+ * A finished explanation is saved in this browser and opened. A supplement
+ * (exploring a step) is handed to `onSupplement` instead; the page stays.
  */
-export function useGenerationRun() {
+export function useGenerationRun(options: { onSupplement?: (supplement: Supplement) => void } = {}) {
   const [state, dispatch] = useReducer(loaderReducer, initialLoaderState);
   const active = useRef<AbortController | null>(null);
-  const last = useRef<{ topic: string; idempotencyKey: string } | null>(null);
+  const last = useRef<{ spec: RunSpec; idempotencyKey: string } | null>(null);
   const router = useRouter();
+  const onSupplement = useRef(options.onSupplement);
+  useEffect(() => {
+    onSupplement.current = options.onSupplement;
+  });
 
   const start = useCallback(
-    async (topic: string, idempotencyKey: string) => {
+    async (spec: RunSpec, idempotencyKey: string) => {
       if (active.current) return;
       const controller = new AbortController();
       active.current = controller;
-      last.current = { topic, idempotencyKey };
-      dispatch({ type: "start", topic });
+      last.current = { spec, idempotencyKey };
+      dispatch({ type: "start", topic: spec.label, kind: spec.kind });
       const end = await streamGeneration({
-        topic,
+        body: spec.body,
         idempotencyKey,
         signal: controller.signal,
         onEvent: (event) => dispatch({ type: "event", event }),
@@ -40,6 +57,10 @@ export function useGenerationRun() {
       active.current = null;
       dispatch({ type: "end", end });
       if (end.kind !== "terminal" || end.event.type !== "completed") return;
+      if (end.event.supplement) {
+        onSupplement.current?.(end.event.supplement);
+        return;
+      }
       // Navigate only after the server confirmed the save...
       if (end.event.persisted) {
         router.push(end.event.url);
@@ -48,7 +69,7 @@ export function useGenerationRun() {
       // ...or once the explanation itself has arrived: save it in this browser and open it.
       // If storage is full or blocked it still opens for this visit, marked as not saved.
       if (end.event.concept) {
-        saveExplanation({ topic, concept: end.event.concept, createdAt: new Date().toISOString(), attempts: end.event.attempts });
+        saveExplanation({ topic: spec.label, concept: end.event.concept, createdAt: new Date().toISOString(), attempts: end.event.attempts });
         router.push(end.event.url);
       }
     },
@@ -57,7 +78,7 @@ export function useGenerationRun() {
 
   const cancel = useCallback(() => active.current?.abort(), []);
   const retry = useCallback(() => {
-    if (last.current) void start(last.current.topic, last.current.idempotencyKey);
+    if (last.current) void start(last.current.spec, last.current.idempotencyKey);
   }, [start]);
   const reset = useCallback(() => dispatch({ type: "reset" }), []);
 
@@ -67,28 +88,42 @@ export function useGenerationRun() {
   return { state, start, cancel, retry, reset };
 }
 
-const STAGE_LABELS: Record<Stage, { live: string; demo: string }> = {
+const STAGE_LABELS: Record<Stage, { live: string; demo: string; text?: string }> = {
   access: { live: "Check access", demo: "Check access" },
-  plan: { live: "Plan the explanation", demo: "Find a bundled fixture" },
-  generate: { live: "Draft scenes", demo: "Draft scenes" },
-  validate: { live: "Check structure and layout", demo: "Check structure and layout" },
-  evaluate: { live: "Review accuracy and teaching quality", demo: "Review" },
-  persist: { live: "Save to this browser", demo: "Save" },
+  read: { live: "Read your material", demo: "Read your material" },
+  plan: { live: "Plan the explanation", demo: "Find a bundled example" },
+  generate: { live: "Draft scenes", demo: "Draft scenes", text: "Write the text" },
+  validate: { live: "Lay out and check the scenes", demo: "Check structure and layout", text: "Check the text" },
+  evaluate: { live: "Review accuracy and fidelity", demo: "Review" },
+  persist: { live: "Save to this browser", demo: "Save", text: "Keep it with this step" },
 };
 
 const DEMO_STAGES: Stage[] = ["plan", "validate"];
-const LIVE_STAGES: Stage[] = ["access", "plan", "generate", "validate", "evaluate", "persist"];
+const LIVE_STAGES: Record<RequestKind, Stage[]> = {
+  topic: ["access", "plan", "generate", "validate", "evaluate", "persist"],
+  source: ["access", "read", "plan", "generate", "validate", "evaluate", "persist"],
+  example: ["access", "plan", "generate", "validate", "evaluate", "persist"],
+  text: ["access", "generate", "validate", "evaluate", "persist"],
+};
 
 export function GenerationLoader({
   state,
   onCancel,
   onRetry,
   onEditTopic,
+  onSuggestion,
+  editLabel = "Edit request",
+  compact = false,
 }: {
   state: LoaderState;
   onCancel: () => void;
   onRetry: () => void;
   onEditTopic: () => void;
+  /** Submit one of the alternatives offered for an unsupported or ambiguous request. */
+  onSuggestion?: (suggestion: string) => void;
+  editLabel?: string;
+  /** Smaller, for the player's drawer. */
+  compact?: boolean;
 }) {
   const running = state.status === "connecting" || state.status === "running";
   const elapsed = useElapsedSeconds(running);
@@ -103,14 +138,18 @@ export function GenerationLoader({
 
   if (state.status === "idle") return null;
 
-  const stages = state.mode === "demo" ? DEMO_STAGES : LIVE_STAGES;
+  const stages = state.mode === "demo" ? DEMO_STAGES : LIVE_STAGES[state.kind];
+  const labelOf = (stage: Stage) => {
+    const labels = STAGE_LABELS[stage];
+    return state.mode === "demo" ? labels.demo : state.kind === "text" && labels.text ? labels.text : labels.live;
+  };
   const currentAttempt = state.attempts.at(-1)?.attempt ?? 0;
   const rejected = state.attempts.filter((a) => a.outcome === "rejected");
 
   return (
     <section
       aria-labelledby="generation-heading"
-      className="rounded-2xl border border-line bg-paper-raised p-5 shadow-[0_12px_32px_-22px_rgba(30,25,15,0.35)] sm:p-6"
+      className={compact ? "rounded-xl border border-line bg-paper-raised p-4" : "rounded-2xl border border-line bg-paper-raised p-5 shadow-[0_12px_32px_-22px_rgba(30,25,15,0.35)] sm:p-6"}
       data-testid="generation-loader"
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -153,11 +192,7 @@ export function GenerationLoader({
       ) : (
         <ol className="mt-5 space-y-3" aria-label="Generation stages">
           {stages.map((stage) => (
-            <StageRow
-              key={stage}
-              label={STAGE_LABELS[stage][state.mode ?? "live"]}
-              {...state.stages[stage]}
-            />
+            <StageRow key={stage} label={labelOf(stage)} {...state.stages[stage]} />
           ))}
         </ol>
       )}
@@ -196,6 +231,24 @@ export function GenerationLoader({
               ))}
             </ul>
           ) : null}
+          {state.error.suggestions?.length && onSuggestion ? (
+            <div className="mt-3">
+              <p className="text-sm font-medium text-ink-soft">Try instead:</p>
+              <ul className="mt-1.5 flex flex-wrap gap-2">
+                {state.error.suggestions.map((suggestion) => (
+                  <li key={suggestion}>
+                    <button
+                      type="button"
+                      onClick={() => onSuggestion(suggestion)}
+                      className="rounded-full border border-line-strong bg-paper-raised px-3 py-1 text-sm text-ink-soft hover:border-ink-faint hover:text-ink"
+                    >
+                      {suggestion}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           {state.error.retryAfterSeconds ? (
             <p className="mt-2 text-sm text-ink-muted">You can try again in about {formatWait(state.error.retryAfterSeconds)}.</p>
           ) : null}
@@ -210,7 +263,7 @@ export function GenerationLoader({
               onClick={onEditTopic}
               className="rounded-full border border-line-strong px-4 py-2 text-sm font-semibold text-ink-soft hover:bg-paper-sunk"
             >
-              Edit topic
+              {editLabel}
             </button>
           </div>
         </div>
@@ -228,7 +281,11 @@ export function GenerationLoader({
       ) : null}
 
       {state.status === "completed" && state.completed ? (
-        state.completed.persisted ? (
+        state.completed.supplement ? (
+          <p className="mt-5 text-sm font-medium text-success" role="status">
+            {state.completed.supplement.kind === "example" ? "The example is ready below." : "Done. The text is below."}
+          </p>
+        ) : state.completed.persisted ? (
           <p className="mt-5 flex items-center gap-2 text-sm font-medium text-success" role="status">
             <Spinner /> Saved. Opening your explanation…
           </p>
@@ -289,12 +346,20 @@ function Spinner() {
   return <span aria-hidden className="inline-block size-4 animate-spin rounded-full border-2 border-current border-r-transparent" />;
 }
 
+const RUNNING_HEADING: Record<RequestKind, string> = {
+  topic: "Building your explanation",
+  source: "Visualizing your material",
+  example: "Making another example",
+  text: "Writing about this step",
+};
+
 function headingFor(state: LoaderState): string {
   switch (state.status) {
     case "connecting":
     case "running":
-      return state.mode === "demo" ? "Opening a demo explanation" : "Building your explanation";
+      return state.mode === "demo" ? "Opening a demo explanation" : RUNNING_HEADING[state.kind];
     case "completed":
+      if (state.completed?.supplement) return state.completed.supplement.kind === "example" ? "Example ready" : "Text ready";
       return state.completed?.persisted ? "Explanation saved" : state.completed?.demo ? "Demo explanation ready" : "Explanation ready";
     case "cancelled":
       return "Generation cancelled";
@@ -308,6 +373,7 @@ function headingFor(state: LoaderState): string {
 function liveMessage(state: LoaderState): string {
   if (state.status === "failed") return state.error ? `${state.error.title}. ${state.error.message}` : "Generation failed.";
   if (state.status === "completed") {
+    if (state.completed?.supplement) return state.completed.supplement.kind === "example" ? "The example is ready." : "The text is ready.";
     if (state.completed?.persisted) return "Saved. Opening your explanation.";
     return state.completed?.demo ? "Demo explanation ready." : "Saved in this browser. Opening your explanation.";
   }

@@ -1,0 +1,18 @@
+Incident review: checkout errors on 12 June
+
+Summary: For 41 minutes, about 30% of checkout requests failed with server errors. No payments were charged twice.
+
+Timeline (all times UTC)
+09:02 The payments team deployed version 4.18 of the checkout service.
+09:15 The primary database for orders reached its connection limit.
+09:16 Error rates on checkout rose above 25%.
+09:18 The on-call engineer was paged automatically.
+09:24 The support team posted a status page notice.
+09:31 The payments team rolled back to version 4.17. Errors continued.
+09:40 The database team found a reporting job, started at 09:10, holding about 400 idle connections.
+09:43 The reporting job was stopped and its connections were released.
+09:57 Error rates returned to normal.
+
+Cause: The reporting job opened a new connection for each query and never closed them, so the orders database ran out of connections. The deploy at 09:02 was not related; rolling it back had no effect.
+
+Follow-up: Limit connections per job. At some point the reporting job had been moved to run in the morning instead of at night; the review did not find out when or why.

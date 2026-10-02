@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { SavedExplanation } from "@/components/SavedExplanation";
+import { generationMode } from "@/lib/env";
 
 /** An explanation generated in this browser; its content comes from the browser's localStorage. */
 export const metadata: Metadata = {
@@ -9,5 +10,5 @@ export const metadata: Metadata = {
 
 export default async function ConceptPage({ params }: PageProps<"/concept/[id]">) {
   const { id } = await params;
-  return <SavedExplanation id={id} />;
+  return <SavedExplanation id={id} exploreAvailable={generationMode().mode === "live"} />;
 }

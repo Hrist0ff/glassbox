@@ -1,4 +1,4 @@
-import { ARENA, EDGE_LABEL, LABEL, NODE, PANEL, type PANEL_KINDS } from "./constants";
+import { ARENA, EDGE_LABEL, LABEL, NODE, PANEL, type Arena } from "./constants";
 import type { NodeShape, Panel, VisualNode } from "./schema";
 
 /**
@@ -15,6 +15,16 @@ export type Point = { x: number; y: number };
 export type Box = { x0: number; y0: number; x1: number; y1: number };
 
 const collapse = (text: string) => text.trim().replace(/\s+/g, " ");
+
+/** East Asian wide and fullwidth characters take about two monospace cells. */
+const WIDE = /[\u1100-\u115F\u2E80-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFF60\uFFE0-\uFFE6]/;
+
+/** Width of text in monospace cells: wide characters count twice. */
+export function visualLength(text: string): number {
+  let n = 0;
+  for (const ch of text) n += WIDE.test(ch) ? 2 : 1;
+  return n;
+}
 
 /** Labels of at most this many characters stay on one line. */
 const SINGLE_LINE_CHARS = 14;
@@ -55,10 +65,15 @@ export function nodeBox(node: Pick<VisualNode, "x" | "y">): Box {
   };
 }
 
-/** Estimated box of the label drawn below a node. */
-export function labelBox(node: Pick<VisualNode, "x" | "y" | "label">): Box {
+/**
+ * Estimated box of the label drawn below a node. `wide` counts East Asian
+ * wide characters twice; it applies to concepts laid out by the layout
+ * engine. Version-1 concepts keep the original per-character estimate, so
+ * explanations that were valid when saved stay valid.
+ */
+export function labelBox(node: Pick<VisualNode, "x" | "y" | "label">, wide = false): Box {
   const lines = wrapLabel(node.label);
-  const width = Math.max(...lines.map((line) => line.length)) * LABEL.charWidth;
+  const width = Math.max(...lines.map((line) => (wide ? visualLength(line) : line.length))) * LABEL.charWidth;
   const top = node.y + NODE.radius + LABEL.gap;
   return {
     x0: node.x - width / 2,
@@ -70,7 +85,7 @@ export function labelBox(node: Pick<VisualNode, "x" | "y" | "label">): Box {
 
 export function edgeLabelSize(label: string): { width: number; height: number } {
   return {
-    width: collapse(label).length * EDGE_LABEL.charWidth + EDGE_LABEL.paddingX * 2,
+    width: visualLength(collapse(label)) * EDGE_LABEL.charWidth + EDGE_LABEL.paddingX * 2,
     height: EDGE_LABEL.height,
   };
 }
@@ -84,12 +99,12 @@ export function boxesOverlap(a: Box, b: Box, padding = 0): boolean {
   );
 }
 
-export function insideArena(box: Box, margin: number = ARENA.safeMargin): boolean {
+export function insideArena(box: Box, margin: number = ARENA.safeMargin, arena: Arena = ARENA): boolean {
   return (
     box.x0 >= margin &&
     box.y0 >= margin &&
-    box.x1 <= ARENA.width - margin &&
-    box.y1 <= ARENA.height - margin
+    box.x1 <= arena.width - margin &&
+    box.y1 <= arena.height - margin
   );
 }
 
@@ -188,9 +203,13 @@ export function clampCenterToArena(p: Point, width: number, height: number): Poi
 // Panels
 // ---------------------------------------------------------------------------
 
-/** What decides a panel's size. Built from a concept panel or a story panel entity. */
+/**
+ * What decides the size of a log, code, table, or version-1 timeline panel.
+ * Built from a concept panel or a story panel entity. The other panels are
+ * measured from their frames (`frames.ts`).
+ */
 export type PanelShape = {
-  kind: (typeof PANEL_KINDS)[number];
+  kind: "log" | "code" | "table" | "timeline";
   titled: boolean;
   /** Records (log), events (timeline), lines (code), or rows (table). */
   count: number;
@@ -225,7 +244,7 @@ export function panelSize(shape: PanelShape): { width: number; height: number } 
   }
 }
 
-export function conceptPanelShape(panel: Panel): PanelShape {
+export function conceptPanelShape(panel: Extract<Panel, { kind: PanelShape["kind"] }>): PanelShape {
   const base = { kind: panel.kind, titled: panel.label.trim().length > 0, columns: 0, rowLabels: false, tags: false, longestLine: 0 };
   switch (panel.kind) {
     case "log":
@@ -239,8 +258,7 @@ export function conceptPanelShape(panel: Panel): PanelShape {
   }
 }
 
-/** Box of a concept panel, centered on its coordinates. */
-export function panelBox(panel: Panel): Box {
-  const { width, height } = panelSize(conceptPanelShape(panel));
-  return { x0: panel.x - width / 2, y0: panel.y - height / 2, x1: panel.x + width / 2, y1: panel.y + height / 2 };
+/** Box of the given size centered on a point. */
+export function centeredBox(center: Point, size: { width: number; height: number }): Box {
+  return { x0: center.x - size.width / 2, y0: center.y - size.height / 2, x1: center.x + size.width / 2, y1: center.y + size.height / 2 };
 }

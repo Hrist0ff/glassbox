@@ -30,7 +30,7 @@ async function libraryLinks(): Promise<string[]> {
 
 async function generate(topic: string) {
   await page.goto("/");
-  await page.getByLabel("What complex concept should we visualize today?").fill(topic);
+  await page.getByLabel("What should we visualize today?").fill(topic);
   await page.getByRole("button", { name: "Visualize" }).click();
 }
 
@@ -106,11 +106,12 @@ test("a draft that never passes review is not saved", async ({ request }) => {
   expect(await libraryLinks()).toHaveLength(1);
 });
 
-test("an unsupported topic gets the planner's explanation", async () => {
-  await generate("Stock charts unsupported");
+test("an unsupported topic gets the planner's explanation and alternatives that work", async () => {
+  await generate("Sine wave plot unsupported");
   const alert = page.getByTestId("generation-loader").getByRole("alert");
-  await expect(alert).toContainText("This topic doesn't fit the format");
-  await expect(alert).toContainText("needs charts");
+  await expect(alert).toContainText("This request doesn't fit the format");
+  await expect(alert).toContainText("continuous function");
+  await expect(alert.getByRole("button", { name: "How binary search works" })).toBeVisible();
 });
 
 test("cancelling stops the server work, saves nothing, and frees the slot", async () => {
@@ -146,4 +147,57 @@ test("a saved explanation can be deleted from the library", async () => {
   await library.getByRole("button", { name: /Delete “Binary search \(mock provider\)”/ }).click();
   await library.getByRole("button", { name: "Delete", exact: true }).click();
   await expect(library.getByText("Nothing here yet")).toBeVisible();
+});
+
+test("visualizes pasted material, with the evidence for each step", async () => {
+  await page.goto("/");
+  await page.getByRole("tab", { name: "Visualize my information" }).click();
+  await page.getByRole("button", { name: "Use a sample" }).click();
+  await expect(page.getByLabel("Paste the material to visualize")).toHaveValue(/Status notes, warehouse move/);
+  await page.getByRole("button", { name: "Visualize it" }).click();
+  const loader = page.getByTestId("generation-loader");
+  await expect(loader).toContainText("Read your material");
+  await page.waitForURL(/\/concept\/[0-9a-f-]{36}$/, { timeout: 30_000 });
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Your material (mock provider)");
+
+  await page.getByRole("button", { name: "Continue" }).click(); // description
+  await page.getByRole("button", { name: "Continue" }).click(); // step 1
+  await page.getByRole("button", { name: "Sources" }).click();
+  const drawer = page.getByRole("complementary", { name: "Sources and assumptions" });
+  await expect(drawer).toContainText("Step 1 of");
+  await expect(drawer).toContainText("Stated in the material");
+  await expect(drawer).toContainText("Passage 1");
+  await expect(drawer.locator("mark")).toHaveCount(1);
+  await expect(drawer).toContainText("Made from material you supplied");
+  // The mock's invented excerpt was not found, so it is not presented as stated.
+  await expect(drawer).toContainText("could not be matched to an exact excerpt");
+  await expect(drawer).toContainText("Not stated in the material");
+});
+
+test("explores a step: an explanation and another example, kept with that step", async () => {
+  const links = await libraryLinks();
+  await page.goto(links[0]!);
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "Explore" }).click();
+  const drawer = page.getByRole("complementary", { name: "Explore this step" });
+  await expect(drawer).toContainText("Step 1 of");
+  await drawer.getByRole("button", { name: /Explain this step/ }).click();
+  await expect(drawer).toContainText("one comparison rules out half", { timeout: 20_000 });
+  await expect(drawer).toContainText("Explanation of this step · AI-generated");
+
+  await drawer.getByRole("button", { name: /Show another example/ }).click();
+  const play = drawer.getByRole("link", { name: /Play the example/ });
+  await expect(play).toBeVisible({ timeout: 30_000 });
+  await play.click();
+  await page.waitForURL(/\/concept\/[0-9a-f-]{36}\/example\/[0-9a-f-]{36}$/);
+  await expect(page.getByText("AI-generated example", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: "← Back to the explanation" })).toBeVisible();
+
+  // Both stay with the explanation after a reload.
+  await page.goto(links[0]!);
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "Explore" }).click();
+  await expect(page.getByRole("complementary", { name: "Explore this step" }).getByRole("listitem")).toHaveCount(2);
 });

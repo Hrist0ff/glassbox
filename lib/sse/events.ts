@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ConceptSchema } from "@/lib/concept/schema";
+import { ConceptSchema, SupplementSchema } from "@/lib/concept/schema";
 
 /**
  * Typed event contract for POST /api/generate (server-sent events).
@@ -12,7 +12,8 @@ import { ConceptSchema } from "@/lib/concept/schema";
 
 export const MAX_ATTEMPTS = 3;
 
-export const STAGES = ["access", "plan", "generate", "validate", "evaluate", "persist"] as const;
+/** `read` runs only for supplied material. */
+export const STAGES = ["access", "read", "plan", "generate", "validate", "evaluate", "persist"] as const;
 export type Stage = (typeof STAGES)[number];
 
 export const FAILURE_CODES = [
@@ -33,7 +34,7 @@ const base = {
 };
 
 /** Wire limits; `fitEvent` clips text so the server never emits an event the client would reject. */
-export const EVENT_LIMITS = { message: 400, failedMessage: 600, reason: 400, reasons: 8 } as const;
+export const EVENT_LIMITS = { message: 400, failedMessage: 600, reason: 400, reasons: 8, suggestion: 100, suggestions: 3 } as const;
 
 const shortList = z.array(z.string().max(EVENT_LIMITS.reason)).max(EVENT_LIMITS.reasons);
 
@@ -76,6 +77,8 @@ export const GenerationEventSchema = z.discriminatedUnion("type", [
      * since there is no URL to load it from. Validated again before rendering.
      */
     concept: ConceptSchema.optional(),
+    /** For "explore" requests: the step explanation, simpler version, or example, for the browser to keep. */
+    supplement: SupplementSchema.optional(),
   }),
   z.object({
     ...base,
@@ -84,6 +87,8 @@ export const GenerationEventSchema = z.discriminatedUnion("type", [
     message: z.string().max(EVENT_LIMITS.failedMessage),
     retryable: z.boolean(),
     reasons: shortList.optional(),
+    /** Requests that would work instead, for unsupported or ambiguous ones. */
+    suggestions: z.array(z.string().max(EVENT_LIMITS.suggestion)).max(EVENT_LIMITS.suggestions).optional(),
   }),
 ]);
 
@@ -112,6 +117,9 @@ export function fitEvent<E extends GenerationEventInput>(event: E): E {
         ...event,
         message: clip(event.message, EVENT_LIMITS.failedMessage),
         ...(event.reasons ? { reasons: clipReasons(event.reasons) } : {}),
+        ...(event.suggestions
+          ? { suggestions: event.suggestions.slice(0, EVENT_LIMITS.suggestions).map((s) => clip(s, EVENT_LIMITS.suggestion)) }
+          : {}),
       };
     default:
       return event;
@@ -129,6 +137,7 @@ export const PreStreamErrorSchema = z.object({
       "rate_limited",
       "in_progress",
       "misconfigured",
+      "demo_mode",
       "internal",
     ]),
     message: z.string(),
@@ -136,9 +145,3 @@ export const PreStreamErrorSchema = z.object({
   }),
 });
 export type PreStreamError = z.infer<typeof PreStreamErrorSchema>["error"];
-
-export const GenerateRequestSchema = z.strictObject({
-  topic: z.string(),
-  /** Client-generated per submission; reused by "Retry" so a saved result is found instead of regenerated. */
-  idempotencyKey: z.uuid(),
-});

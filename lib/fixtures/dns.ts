@@ -34,7 +34,7 @@ const e = (id: string, from: EntityId, to: EntityId, label: string, animated: bo
 const QUERY = "A example.com?";
 
 export const dnsResolution: Concept = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   id: "6a1f2c3e-0b4d-4e5f-8a6b-1c2d3e4f5a02",
   title: "How DNS finds an address",
   description:

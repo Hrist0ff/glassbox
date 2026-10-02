@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { connection } from "next/server";
 import { Gallery } from "@/components/Gallery";
 import { StorySnapshot } from "@/components/story/StorySnapshot";
 import { TopicForm, type GenerationAvailability } from "@/components/TopicForm";
@@ -9,7 +10,9 @@ import { BUNDLED_FIXTURES } from "@/lib/fixtures";
 import { raftLeaderElection } from "@/lib/fixtures/raft";
 import { stepToStory } from "@/lib/story/from-concept";
 
-export default function HomePage() {
+export default async function HomePage() {
+  // The mode and limits come from the server's environment at request time, not at build time.
+  await connection();
   const mode = generationMode();
 
   const availability: GenerationAvailability =
@@ -26,13 +29,14 @@ export default function HomePage() {
       <section className="border-b border-line">
         <div className="mx-auto grid max-w-6xl gap-12 px-4 pb-16 pt-14 sm:px-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] lg:items-center lg:pt-20">
           <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.14em] text-accent">An open, interactive wiki for technical concepts</p>
+            <p className="text-sm font-semibold uppercase tracking-[0.14em] text-accent">Interactive visual explanations</p>
             <h1 className="mt-4 font-display text-[2.6rem] leading-[1.05] tracking-tight text-ink sm:text-6xl">
-              See how systems work, <em className="italic text-ink-soft">one change at a time.</em>
+              See how it works, <em className="italic text-ink-soft">one change at a time.</em>
             </h1>
             <p className="mt-5 max-w-xl text-lg leading-relaxed text-ink-soft">
-              Each explanation is a short animated story. Step forward and back at your own pace; every step changes one
-              thing and tells you why.
+              Each explanation is a short animated story, drawn the way the subject needs: messages between actors, a timeline, a
+              comparison, a hierarchy, or a chart. Step forward and back at your own pace, or paste your own notes and see them
+              laid out, with each claim linked to the passage it came from.
             </p>
             <div className="mt-9">
               <TopicForm availability={availability} />
@@ -64,26 +68,32 @@ export default function HomePage() {
         <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6">
           <h2 className="font-display text-3xl tracking-tight text-ink">How explanations are made</h2>
           <p className="mt-2 max-w-2xl text-ink-soft">
-            Generated explanations are data, not code: the AI writes a small JSON storyboard and the player decides how to draw
-            and animate it.
+            Generated explanations are data, not code: the AI writes a small storyboard, and the application decides how to lay
+            it out, draw it, and animate it.
           </p>
-          <ol className="mt-8 grid gap-6 md:grid-cols-3">
-            <HowStep n={1} title="Plan">
-              A planner picks the central mechanism, a small cast of entities, and a storyboard that starts with an intuitive
-              example and ends with a takeaway. Topics that don&apos;t fit nodes and messages are declined.
+          <ol className="mt-8 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+            <HowStep n={1} title="Read">
+              For pasted material, the AI lists its claims with the passages that support them. Every quoted excerpt is checked
+              word for word; a claim whose excerpt isn&apos;t found is marked as interpretation.
             </HowStep>
-            <HowStep n={2} title="Draft and check">
-              A generator writes {LIMITS.steps.min}–{LIMITS.steps.max} scenes. Deterministic checks verify references, limits,
-              and layout before anything else happens.
+            <HowStep n={2} title="Plan">
+              A planner states what you should come away understanding and picks the view that shows it best. Requests the
+              player can&apos;t show are declined with alternatives that would work.
             </HowStep>
-            <HowStep n={3} title="Review, revise, save">
-              A separate reviewer critiques accuracy and teaching quality. Drafts get up to {MAX_ATTEMPTS} attempts in
-              total; only one that passes every check is saved.
+            <HowStep n={3} title="Draft, lay out, check">
+              A generator writes {LIMITS.steps.min}–{LIMITS.steps.max} scenes as data. Application code lays them out for wide
+              and phone screens and checks references, sizes, overlaps, and citations.
+            </HowStep>
+            <HowStep n={4} title="Review, revise, save">
+              A separate reviewer compares the draft with your request (and your material). Drafts get up to {MAX_ATTEMPTS}{" "}
+              attempts; only one that passes every check is saved, in this browser.
             </HowStep>
           </ol>
           <p className="mt-8 max-w-3xl text-sm leading-relaxed text-ink-muted">
-            Automated review is a quality check, not proof of correctness, and no sources are consulted. AI-generated
-            explanations are always labeled; verify anything important against primary documentation.
+            Automated review is a quality check, not proof of correctness. Topic explanations come from the AI model&apos;s
+            general knowledge and consult no sources; explanations of your material are only as reliable as the material. Every
+            explanation lists its scope, omissions, and assumptions under Sources. AI-generated explanations are always labeled;
+            verify anything important.
           </p>
         </div>
       </section>

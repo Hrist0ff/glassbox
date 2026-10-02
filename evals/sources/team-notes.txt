@@ -1,0 +1,7 @@
+Notes from the Tuesday product meeting
+
+Dana said the new one should ship before the conference. Sam disagreed and wants to wait for the security review, which might take two weeks or might take a month.
+
+We agreed to move the beta forward. It was not decided who tells the customers.
+
+Priya will check whether the old API can stay on until the end of the year. If it can, the migration guide can wait.

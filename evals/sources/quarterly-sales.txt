@@ -1,0 +1,11 @@
+Bike shop sales report, 2025
+
+Units sold per quarter:
+Q1: 120 bikes
+Q2: 310 bikes
+Q3: 290 bikes
+Q4: no figures were recorded because the point-of-sale system was being replaced.
+
+Electric bikes were part of these totals: 20 in Q1, 75 in Q2, and 95 in Q3.
+
+The owner believes the spring jump came from a new cycling path that opened in April, but no survey was done to confirm this.

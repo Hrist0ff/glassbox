@@ -19,7 +19,7 @@ const PATCH_FIELDS: Record<EntityKind, readonly string[]> = {
   card: ["x", "y", "font"],
   text: ["x", "y", "text", "ink", "font", "anchor"],
   link: ["from", "to", "dashed", "label"],
-  panel: ["x", "y", "title", "columns", "rows"],
+  panel: ["x", "y", "title", "columns", "rows", "frame", "box", "scale", "links", "note"],
 };
 
 /** Upper bound of everything drawn for an entity, including labels, in domain units. */
@@ -158,6 +158,8 @@ function checkAction(action: Action, world: World): string[] {
     }
     case "truncate":
       return need(action.of, ["log", "card", "panel"]);
+    case "cells":
+      return need(action.of, ["panel"]);
     case "send":
       return [...anchor(action.from), ...anchor(action.to)];
     case "zoom":

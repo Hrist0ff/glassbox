@@ -1,3 +1,6 @@
+import type { PanelKind } from "@/lib/concept/constants";
+import type { Frame } from "@/lib/concept/frames";
+
 /**
  * Story format for the full-screen, narrated player (`components/story`).
  *
@@ -45,6 +48,13 @@ export type NodeEntity = {
   descAt?: "above" | "below";
 };
 
+/** What a cell of a converted panel stands for; read by the panel renderers. */
+export type CellMeta =
+  | { panel: "timeline"; lane: number; date: "exact" | "approximate" | "unknown" | "none"; end: boolean }
+  | { panel: "comparison"; criterion: string; alternative: number; missing: "unknown" | "not_applicable" | null }
+  | { panel: "hierarchy"; parent: string | null }
+  | { panel: "chart"; series: number; category: number; value: number | null };
+
 /** One record in a log, or one line in a card. */
 export type Cell = {
   text: string;
@@ -53,6 +63,9 @@ export type Cell = {
   tag?: string;
   /** Highlighted line, e.g. the line of code being run. */
   mark?: boolean;
+  /** Identity across steps in panels whose items are matched by key (timeline events, hierarchy items, …). */
+  key?: string;
+  meta?: CellMeta;
 };
 
 /** A sequence of boxed records, like a Raft or Kafka log. */
@@ -128,7 +141,7 @@ export type LinkEntity = {
 export type PanelEntity = {
   kind: "panel";
   id: string;
-  variant: "log" | "code" | "table" | "timeline";
+  variant: PanelKind;
   /** Center, in domain units. */
   x: number;
   y: number;
@@ -136,8 +149,21 @@ export type PanelEntity = {
   /** Tables only: column headings, and row headings ("" for none). */
   columns?: string[];
   rows?: string[];
-  /** Records, events, lines of code, or table cells row by row. */
+  /** Records, events, lines of code, table cells row by row, or the keyed items of the other panels. */
   cells: Cell[];
+  /**
+   * Stable drawing of a timeline (version 2), comparison, hierarchy, or
+   * chart, built from everything the panel shows across the explanation.
+   */
+  frame?: Frame;
+  /** Reserved size in arena units for a laid-out log, code, or table panel; content starts at its top-left. */
+  box?: { width: number; height: number };
+  /** Arena units per domain unit. Default 10 × 6 (the landscape arena). */
+  scale?: { x: number; y: number };
+  /** Typed links between items, by key: timeline relations, hierarchy cross-links. */
+  links?: { from: string; to: string; type: string }[];
+  /** One line under a chart saying where its numbers come from. */
+  note?: string;
 };
 
 export type Entity = NodeEntity | LogEntity | CursorEntity | CardEntity | TextEntity | LinkEntity | PanelEntity;
@@ -171,6 +197,8 @@ export type Action =
   | { do: "cell"; of: string; index: number; patch: Partial<Cell> }
   /** Remove cells from the end of a log or card, keeping the first `keep`. */
   | { do: "truncate"; of: string; keep: number }
+  /** Replace a panel's cells; cells whose `key` was already shown keep their age, new ones fade in. */
+  | { do: "cells"; of: string; cells: Cell[] }
   | {
       do: "send";
       from: Anchor;
@@ -203,6 +231,8 @@ export type Beat = {
   run?: Step[];
   /** `auto` moves on as soon as the script finishes. Default `click`. */
   next?: "click" | "auto";
+  /** Id of the explanation step this beat belongs to (converted explanations), for step-level tools. */
+  step?: string;
 };
 
 export type Chapter = {

@@ -3,7 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { binarySearch } from "@/lib/fixtures/binary-search";
 import { dnsResolution } from "@/lib/fixtures/dns";
 import { MemorySlots } from "@/lib/generation/memory-slots";
-import { deleteExplanation, findExplanation, parseLibrary, readLibraryRaw, saveExplanation } from "@/lib/library";
+import { deleteExplanation, findExplanation, parseLibrary, readLibraryRaw, readSupplementsRaw, saveExplanation, saveSupplement, supplementsFor } from "@/lib/library";
+import { compoundInterest } from "@/lib/fixtures/compound-interest";
 import { GenerationEventSchema } from "@/lib/sse/events";
 
 const limits = { clientLimit: 2, globalLimit: 3, windowSeconds: 3600, leaseSeconds: 60 };
@@ -75,6 +76,53 @@ describe("the browser library", () => {
     expect(parseLibrary(readLibraryRaw()).map((i) => i.topic)).toEqual(["Binary search"]);
     expect(parseLibrary("not json")).toEqual([]);
     expect(parseLibrary(null)).toEqual([]);
+  });
+
+  it("reads a version-1 library written before this release, migrating its explanations", () => {
+    const v1 = { version: 1, items: [{ topic: "Binary search", concept: { ...structuredClone(binarySearch), schemaVersion: 1 }, createdAt: "2026-10-01T09:00:00.000Z", attempts: 2 }] };
+    window.localStorage.setItem("glassbox:library", JSON.stringify(v1));
+    const [item] = parseLibrary(readLibraryRaw());
+    expect(item).toMatchObject({ topic: "Binary search", attempts: 2, concept: { schemaVersion: 2, id: binarySearch.id } });
+    expect(item!.concept.steps).toEqual(binarySearch.steps);
+    // Saving again writes the current version.
+    saveExplanation(item!);
+    expect(JSON.parse(readLibraryRaw()!).version).toBe(2);
+  });
+
+  it("leaves a library from a newer, unknown version alone, and never overwrites it", () => {
+    const newer = JSON.stringify({ version: 99, items: [item()] });
+    window.localStorage.setItem("glassbox:library", newer);
+    expect(parseLibrary(readLibraryRaw())).toEqual([]);
+    expect(saveExplanation(item(dnsResolution, "DNS"))).toBe("blocked");
+    deleteExplanation(binarySearch.id);
+    expect(readLibraryRaw()).toBe(newer);
+    // It still opens for this visit.
+    expect(findExplanation(readLibraryRaw(), dnsResolution.id)).toMatchObject({ stored: false });
+  });
+
+  it("keeps entries it cannot validate when it writes, instead of deleting them", () => {
+    const unreadable = { topic: "edited elsewhere", concept: { ...dnsResolution, id: "7a1f2c3e-0b4d-4e5f-8a6b-1c2d3e4f5a00", title: "" }, createdAt: "x" };
+    window.localStorage.setItem("glassbox:library", JSON.stringify({ version: 2, items: [unreadable] }));
+    saveExplanation(item());
+    deleteExplanation("6a1f2c3e-0b4d-4e5f-8a6b-1c2d3e4f5a77");
+    expect(JSON.parse(readLibraryRaw()!).items).toEqual([expect.objectContaining({ topic: "Binary search" }), unreadable]);
+  });
+
+  it("keeps step supplements beside their explanation, validates them, and deletes them with it", () => {
+    saveExplanation(item());
+    const base = { conceptId: binarySearch.id, stepId: binarySearch.steps[1]!.id, createdAt: "2026-10-02T10:00:00.000Z" };
+    saveSupplement({ kind: "explain", id: "0b1f2c3e-0b4d-4e5f-8a6b-1c2d3e4f5a01", ...base, text: "Why the middle matters.", claims: [] });
+    saveSupplement({ kind: "example", id: "0b1f2c3e-0b4d-4e5f-8a6b-1c2d3e4f5a02", ...base, createdAt: "2026-10-02T11:00:00.000Z", concept: compoundInterest });
+    expect(supplementsFor(readSupplementsRaw(), binarySearch.id).map((s) => s.kind)).toEqual(["example", "explain"]);
+
+    // Edited storage: an invalid example is dropped on read.
+    const stored = JSON.parse(readSupplementsRaw()!);
+    stored.items[0].concept.steps = [];
+    window.localStorage.setItem("glassbox:supplements", JSON.stringify(stored));
+    expect(supplementsFor(readSupplementsRaw(), binarySearch.id).map((s) => s.kind)).toEqual(["explain"]);
+
+    deleteExplanation(binarySearch.id);
+    expect(JSON.parse(readSupplementsRaw()!).items).toEqual([]);
   });
 
   it("still opens an explanation during this visit when storage is full", () => {

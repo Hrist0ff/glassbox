@@ -1,17 +1,18 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { after } from "next/server";
 import { LIMITS } from "@/lib/concept/constants";
+import type { Supplement } from "@/lib/concept/schema";
+import { validateConcept } from "@/lib/concept/validate";
 import { generationMode, modelConfig, serverEnv } from "@/lib/env";
 import { clientKey } from "@/lib/generation/client-key";
 import { MemorySlots } from "@/lib/generation/memory-slots";
+import { bodyLimit, GenerateRequestSchema, requestLabel, toGenerationRequest, type GenerationRequest } from "@/lib/generation/request";
 import { createGenerationStream, SSE_HEADERS, type TerminalEventInput } from "@/lib/generation/stream";
-import { normalizeTopic } from "@/lib/generation/topic";
 import { Deadline } from "@/lib/pipeline/budget";
 import { runDemoPipeline } from "@/lib/pipeline/demo";
 import { createOpenAiClient } from "@/lib/pipeline/openai-client";
-import { runGenerationPipeline, type GenerationMeta, type PipelineOutcome } from "@/lib/pipeline/orchestrator";
-import { GenerateRequestSchema, MAX_ATTEMPTS, type PreStreamError } from "@/lib/sse/events";
-import type { Concept } from "@/lib/concept/schema";
+import { runGenerationPipeline, TEXT_ATTEMPTS, type PipelineOutcome, type PipelineProduct } from "@/lib/pipeline/orchestrator";
+import { MAX_ATTEMPTS, type PreStreamError } from "@/lib/sse/events";
 
 /**
  * POST /api/generate — JSON request, server-sent events response.
@@ -24,8 +25,13 @@ import type { Concept } from "@/lib/concept/schema";
  *   - every provider call has its own timeout and at most one provider retry.
  * If the client disconnects, the generation is cancelled and nothing continues
  * in the background. Nothing is stored on the server: the `completed` event
- * carries the validated explanation, and the browser saves it in localStorage.
+ * carries the validated explanation (or, for exploring a step, the
+ * supplement), and the browser saves it in localStorage.
  * The idempotency key identifies the request for the per-visitor lease.
+ *
+ * Requests: a topic, pasted material (`kind: "source"`), or a step of an
+ * explanation the browser already has (`kind: "explore"`); body limits
+ * depend on the kind (see LIMITS).
  */
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -79,8 +85,25 @@ function sseResponse(body: ReadableStream<Uint8Array>, requestId: string) {
 }
 
 function logOutcome(fields: Record<string, unknown>) {
-  // Metadata only: never the topic, prompts, generated content, or keys.
+  // Metadata only: never the topic, material, prompts, generated content, or keys.
   console.info(JSON.stringify({ event: "generation", ...fields }));
+}
+
+/** The terminal `completed` event for a pipeline product. */
+function completedEvent(request: GenerationRequest, product: PipelineProduct, attempts: number): Extract<TerminalEventInput, { type: "completed" }> {
+  const base = { type: "completed" as const, attempts, persisted: false, demo: false };
+  if (request.kind !== "explore") {
+    if (product.kind !== "concept") throw new Error("expected an explanation");
+    return { ...base, conceptId: product.concept.id, url: `/concept/${product.concept.id}`, concept: product.concept };
+  }
+  // Exploring a step: the explanation itself is unchanged; the result travels as a supplement.
+  const parent = request.context.concept.id;
+  const head = { id: randomUUID(), conceptId: parent, stepId: request.context.stepId, createdAt: new Date().toISOString() };
+  const supplement: Supplement =
+    product.kind === "concept"
+      ? { kind: "example", ...head, concept: product.concept }
+      : { kind: product.action, ...head, text: product.text, claims: product.claims };
+  return { ...base, conceptId: parent, url: `/concept/${parent}`, supplement };
 }
 
 export async function POST(request: Request) {
@@ -92,7 +115,7 @@ export async function POST(request: Request) {
   if (mediaType !== "application/json") {
     return jsonError(415, { code: "unsupported_media_type", message: "Send the request as application/json." });
   }
-  const raw = await readLimitedText(request, LIMITS.requestBodyBytes);
+  const raw = await readLimitedText(request, LIMITS.exploreRequestBytes);
   if (raw === null) {
     return jsonError(413, { code: "payload_too_large", message: "The request is too large." });
   }
@@ -102,13 +125,21 @@ export async function POST(request: Request) {
   } catch {
     return jsonError(400, { code: "invalid_request", message: "The request body is not valid JSON." });
   }
+  const kind = json && typeof json === "object" && typeof (json as { kind?: unknown }).kind === "string" ? (json as { kind: string }).kind : null;
+  if (new TextEncoder().encode(raw).length > bodyLimit(kind)) {
+    return jsonError(413, {
+      code: "payload_too_large",
+      message: kind === "source" ? `Paste at most ${LIMITS.sourceText.max.toLocaleString("en")} characters.` : "The request is too large.",
+    });
+  }
   const parsed = GenerateRequestSchema.safeParse(json);
   if (!parsed.success) {
-    return jsonError(400, { code: "invalid_request", message: "Send a topic and an idempotency key." });
+    return jsonError(400, { code: "invalid_request", message: "Send a topic (or pasted material) and an idempotency key." });
   }
-  const topicResult = normalizeTopic(parsed.data.topic);
-  if (!topicResult.ok) return jsonError(400, { code: "invalid_request", message: topicResult.message });
-  const topic = topicResult.topic;
+  const checked = toGenerationRequest(parsed.data, validateConcept);
+  if (!checked.ok) return jsonError(400, { code: "invalid_request", message: checked.message });
+  const generation = checked.request;
+  const label = requestLabel(generation);
   const requestId = randomUUID();
 
   const mode = generationMode();
@@ -119,6 +150,13 @@ export async function POST(request: Request) {
 
   // ---- Demo mode: bundled fixtures, no AI, no persistence. ----
   if (mode.mode === "demo") {
+    if (generation.kind !== "topic") {
+      return jsonError(503, {
+        code: "demo_mode",
+        message: "This server runs in demo mode without an AI model, so it can only open the bundled examples.",
+      });
+    }
+    const topic = generation.topic;
     const stream = createGenerationStream({
       requestId,
       deadlineMs: 10_000,
@@ -147,10 +185,11 @@ export async function POST(request: Request) {
   const visitor = clientKey(request.headers, PROCESS_SECRET);
   const claim = memorySlots.claim({ clientKey: visitor, ...limits });
   let completed: Extract<TerminalEventInput, { type: "completed" }> | undefined;
-  const persist = async (concept: Concept, meta: GenerationMeta) => {
-    completed = { type: "completed", conceptId: concept.id, url: `/concept/${concept.id}`, attempts: meta.attempts, persisted: false, demo: false, concept };
-    return { id: concept.id };
+  const persist = async (product: PipelineProduct, meta: { attempts: number }) => {
+    completed = completedEvent(generation, product, meta.attempts);
+    return { id: completed.conceptId };
   };
+  const textOnly = generation.kind === "explore" && generation.context.action !== "example";
 
   if (!claim.allowed) {
     const retryAfter = { "Retry-After": String(claim.retryAfterSeconds) };
@@ -185,9 +224,9 @@ export async function POST(request: Request) {
     deadlineMs: env.GENERATION_DEADLINE_MS,
     requestSignal: request.signal,
     run: async ({ emit, signal }): Promise<TerminalEventInput> => {
-      emit({ type: "started", mode: "live", topic, maxAttempts: MAX_ATTEMPTS });
+      emit({ type: "started", mode: "live", topic: label, maxAttempts: textOnly ? TEXT_ATTEMPTS : MAX_ATTEMPTS });
       emit({ type: "progress", stage: "access", state: "done", message: "Within the generation limit" });
-      outcome = await runGenerationPipeline(topic, {
+      outcome = await runGenerationPipeline(generation, {
         llm,
         models,
         emit,
@@ -195,10 +234,17 @@ export async function POST(request: Request) {
         deadline,
         newId: randomUUID,
         persist,
-        persistMessages: { running: "Preparing the explanation for your browser", done: "Ready" },
+        persistMessages: { running: "Preparing the result for your browser", done: "Ready" },
       });
       if (!outcome.ok) {
-        return { type: "failed", code: outcome.code, message: outcome.message, retryable: outcome.retryable, reasons: outcome.reasons };
+        return {
+          type: "failed",
+          code: outcome.code,
+          message: outcome.message,
+          retryable: outcome.retryable,
+          reasons: outcome.reasons,
+          ...(outcome.suggestions ? { suggestions: outcome.suggestions } : {}),
+        };
       }
       // `persist` resolved, so `completed` is set; the terminal event is sent only now.
       return completed!;
@@ -206,6 +252,7 @@ export async function POST(request: Request) {
     onSettled: async (terminal) => {
       logOutcome({
         requestId,
+        kind: generation.kind === "explore" ? `explore:${generation.context.action}` : generation.kind,
         result: terminal.type === "completed" ? "completed" : terminal.code,
         attempts: outcome?.attempts ?? 0,
         latencyMs: deadline.elapsedMs(),

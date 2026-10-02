@@ -28,7 +28,6 @@ export function LibrarySection() {
       ) : (
         <ul className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {items.map(({ concept, topic }) => {
-            const preview = concept.steps[Math.min(3, concept.steps.length - 1)];
             return (
               <ConceptCard
                 key={concept.id}
@@ -38,7 +37,7 @@ export function LibrarySection() {
                   description: concept.description,
                   length: `${concept.steps.length} steps · from “${topic}”`,
                   origin: "ai_generated",
-                  thumbnail: preview ? <StepThumbnail step={preview} /> : undefined,
+                  thumbnail: <StepThumbnail concept={concept} index={3} />,
                 }}
                 action={<DeleteButton id={concept.id} title={concept.title} />}
               />

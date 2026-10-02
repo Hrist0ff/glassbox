@@ -46,7 +46,7 @@ const history = {
 };
 
 export const panelsConcept: Concept = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   id: "9b1f2c3e-0b4d-4e5f-8a6b-1c2d3e4f5a99",
   title: "A request, its log, and a cache",
   description: "A test explanation that uses a log, code, a table, and a timeline, with a request and its reply in one step.",

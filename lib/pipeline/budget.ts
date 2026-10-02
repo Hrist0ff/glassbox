@@ -12,7 +12,11 @@ export const BUDGET = {
   calls: {
     // Planning with a reasoning model regularly takes 20–60 s; 90 s leaves headroom.
     extractor: { preferredMs: 90_000, minMs: 15_000 },
+    // Reading pasted material: extracting claims with excerpts.
+    reader: { preferredMs: 70_000, minMs: 15_000 },
     generator: { preferredMs: 110_000, minMs: 30_000 },
+    // Explaining or simplifying one step: a short text.
+    writer: { preferredMs: 45_000, minMs: 10_000 },
     evaluator: { preferredMs: 60_000, minMs: 15_000 },
   } satisfies Record<PipelineRole, { preferredMs: number; minMs: number }>,
 } as const;

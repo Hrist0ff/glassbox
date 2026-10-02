@@ -10,9 +10,9 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 const newsreader = Newsreader({ variable: "--font-newsreader", subsets: ["latin"], style: ["normal", "italic"] });
 
 export const metadata: Metadata = {
-  title: { default: "Glassbox — see how systems work, one change at a time", template: "%s · Glassbox" },
+  title: { default: "Glassbox — see how it works, one change at a time", template: "%s · Glassbox" },
   description:
-    "Step through animated diagrams that explain distributed systems, networking, and algorithms one change at a time.",
+    "Step through animated explanations of how things work, what happened, and how options compare, from a topic or from your own notes.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

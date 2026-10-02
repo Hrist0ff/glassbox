@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { validateConcept } from "@/lib/concept/validate";
@@ -10,9 +10,10 @@ import { compileStory, worldAt } from "@/lib/story/engine";
 import { conceptToStory, stepToStory } from "@/lib/story/from-concept";
 import { lintStory } from "@/lib/story/lint";
 
-/** Real generated explanations recorded by `npm run eval:prompts`. */
+/** Real generated explanations recorded by `npm run eval:prompts` (git-ignored, so possibly absent). */
 function evalConcepts(): Concept[] {
   const root = path.join(process.cwd(), "evals/runs");
+  if (!existsSync(root)) return [];
   return readdirSync(root).flatMap((run) => {
     let files: string[] = [];
     try {
@@ -38,8 +39,9 @@ function stepScenes(concept: Concept) {
 describe("conceptToStory", () => {
   const corpus = [...BUNDLED_FIXTURES.map((f) => f.concept), ...evalConcepts()];
 
-  it("has a corpus of real explanations to check", () => {
-    expect(corpus.length).toBeGreaterThan(10);
+  it("has a corpus of explanations to check", () => {
+    // Bundled examples always; recorded eval runs when present locally.
+    expect(corpus.length).toBeGreaterThanOrEqual(BUNDLED_FIXTURES.length);
   });
 
   it("produces stories whose every action refers to something on stage", () => {
@@ -54,6 +56,7 @@ describe("conceptToStory", () => {
         const alive = [...scenes[i]!.live.entries()].filter(([, live]) => live.dying === null);
         const ids = (kind: string) => alive.filter(([, l]) => l.entity.kind === kind).map(([id]) => id).sort();
         expect(ids("node"), `${concept.title}: ${step.id}`).toEqual(step.nodes.map((n) => `n-${n.id}`).sort());
+        expect(ids("panel"), `${concept.title}: ${step.id}`).toEqual((step.panels ?? []).map((p) => `p-${p.id}`).sort());
         expect(ids("link"), `${concept.title}: ${step.id}`).toEqual(step.edges.filter((e) => !e.animated).map((e) => `e-${e.id}`).sort());
         expect(scenes[i]!.messages).toHaveLength(step.edges.filter((e) => e.animated).length);
       });
@@ -64,6 +67,8 @@ describe("conceptToStory", () => {
     const story = conceptToStory(raftLeaderElection, options);
     const steps = story.chapters[1]!.beats;
     expect(steps.every((b) => b.plain)).toBe(true);
+    // Every step's beats name the step they belong to, for the step tools.
+    expect([...new Set(steps.flatMap((b) => (b.step ? [b.step] : [])))]).toEqual(raftLeaderElection.steps.map((s) => s.id));
     const world = stepScenes(raftLeaderElection)[1]!; // S5 crashed
     const s5 = world.live.get("n-s5")!.entity;
     expect(s5).toMatchObject({ kind: "node", fill: "gray", desc: ["S5 offline"] });

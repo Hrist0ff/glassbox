@@ -4,6 +4,7 @@ import { wrapLabel } from "@/lib/concept/geometry";
 import type { Concept } from "@/lib/concept/schema";
 import { countWords, parseStoredConcept, validateConcept } from "@/lib/concept/validate";
 import { BUNDLED_FIXTURES } from "@/lib/fixtures";
+import { dnsResolution } from "@/lib/fixtures/dns";
 import { raftLeaderElection } from "@/lib/fixtures/raft";
 
 const clone = (c: Concept): Concept => structuredClone(c);
@@ -19,11 +20,23 @@ describe("bundled fixtures", () => {
     expect(result.ok).toBe(true);
   });
 
-  it("uses distinct visual stories (different entity sets)", () => {
+  it("uses distinct visual stories (different entity and panel sets)", () => {
     const signatures = BUNDLED_FIXTURES.map((f) =>
-      [...new Set(f.concept.steps.flatMap((s) => s.nodes.map((n) => n.id)))].sort().join(","),
+      [...new Set(f.concept.steps.flatMap((s) => [...s.nodes.map((n) => n.id), ...(s.panels ?? []).map((p) => `${p.kind}:${p.id}`)]))].sort().join(","),
     );
     expect(new Set(signatures).size).toBe(BUNDLED_FIXTURES.length);
+  });
+});
+
+describe("compatibility", () => {
+  it("measures labels of version-1 concepts as they were measured when saved", () => {
+    // A long label of wide characters near the left edge: valid under the original per-character estimate.
+    // The laptop sits at x = 140: counting wide characters twice would push this label off the arena.
+    const c = clone(dnsResolution);
+    c.steps.forEach((step) => step.nodes.forEach((n) => n.id === "laptop" && (n.label = "ノートパソコンから名前解決を開始")));
+    expect(validateConcept(c).ok).toBe(true);
+    // Laid-out concepts are measured with wide characters.
+    expect(validateConcept({ ...c, layout: "flow" }).issues.map((i) => i.code)).toContain("label_out_of_bounds");
   });
 });
 
@@ -36,9 +49,12 @@ describe("countWords", () => {
 });
 
 describe("schema-level rejections", () => {
-  it("rejects a wrong schema version", () => {
-    const c = { ...clone(raftLeaderElection), schemaVersion: 2 };
-    expect(codes(c).ok).toBe(false);
+  it("rejects an unknown schema version, and migrates version 1", () => {
+    expect(codes({ ...clone(raftLeaderElection), schemaVersion: 3 }).ok).toBe(false);
+    expect(codes({ ...clone(raftLeaderElection), schemaVersion: 0 }).ok).toBe(false);
+    const migrated = validateConcept({ ...clone(raftLeaderElection), schemaVersion: 1 });
+    expect(migrated.ok && migrated.concept.schemaVersion).toBe(2);
+    expect(migrated.ok && migrated.concept.steps).toEqual(raftLeaderElection.steps);
   });
 
   it("rejects unknown fields anywhere", () => {

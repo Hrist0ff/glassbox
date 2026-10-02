@@ -30,7 +30,7 @@ const edge = (id: string, from: ServerId, to: ServerId, label: string, animated:
 const offlineS5 = server("s5", "S5 offline", "danger", "inactive");
 
 export const raftLeaderElection: Concept = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   id: "6a1f2c3e-0b4d-4e5f-8a6b-1c2d3e4f5a01",
   title: "Raft leader election (simplified)",
   description:

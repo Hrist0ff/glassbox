@@ -1,7 +1,7 @@
 "use client";
 
 import { useReducedMotion } from "framer-motion";
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { captionText, parseCaption } from "@/lib/story/caption";
 import { compileStory, worldAt } from "@/lib/story/engine";
 import { INK } from "@/lib/story/palette";
@@ -21,6 +21,12 @@ import { StoryNav } from "./StoryNav";
 
 /** Distance between the stage edge and the drawing, as in the original. */
 const PAD = 5;
+/** Stages narrower than this (width / height) use the portrait layout when the story has one. */
+const PORTRAIT_BELOW = 0.8;
+
+const subscribeNothing = () => () => undefined;
+/** False during server rendering and hydration, true afterwards. */
+const useHydrated = () => useSyncExternalStore(subscribeNothing, () => true, () => false);
 /** Where reduced-motion mode draws a beat's messages along their path. */
 const FROZEN_MESSAGE_AT = 0.6;
 
@@ -28,24 +34,42 @@ type Cursor = { index: number; epoch: number; skip: boolean };
 
 export function StoryPlayer({
   story,
+  portrait = null,
   label,
   embedded = false,
+  tools,
 }: {
   story: Story;
+  /**
+   * The same story laid out for tall screens (same beats). Used when the
+   * stage is narrow; the reader keeps their place when it switches.
+   */
+  portrait?: Story | null;
   /** Short provenance shown in the top bar at all times, e.g. "AI-generated · not saved". */
   label?: string;
   /** Fill the parent box instead of the whole screen, e.g. on development pages. */
   embedded?: boolean;
+  /**
+   * Step-level tools in the top bar, given the id of the explanation step being shown (null on title and
+   * closing beats). `onDrawer` tells the player a side drawer opened or closed, so it can make room for it.
+   */
+  tools?: (context: { step: string | null; stepIndex: number | null; onDrawer: (open: boolean) => void }) => ReactNode;
 }) {
-  const compiled = useMemo(() => compileStory(story), [story]);
+  const [size, setSize] = useState({ width: 0, height: 0 });
+  const [drawer, setDrawer] = useState(false);
+  const tall = portrait !== null && size.width > 0 && size.width / Math.max(1, size.height) < PORTRAIT_BELOW;
+  const active = tall ? portrait : story;
+  const compiled = useMemo(() => compileStory(active), [active]);
   const last = compiled.beats.length - 1;
-  const reduced = useReducedMotion() ?? false;
+  // Read only after hydration, so the server's markup (which can't know the preference) matches the first render.
+  const hydrated = useHydrated();
+  const prefersReduced = useReducedMotion() ?? false;
+  const reduced = hydrated && prefersReduced;
 
   const [cursor, setCursor] = useState<Cursor>({ index: 0, epoch: 0, skip: false });
   // Elapsed time of the running beat, tagged with the epoch it belongs to so a
   // newly started beat never shows the previous beat's clock.
   const [frame, setFrame] = useState({ epoch: -1, t: 0 });
-  const [size, setSize] = useState({ width: 0, height: 0 });
   const stageRef = useRef<HTMLDivElement>(null);
   const speed = useSpeed();
   // Read by the animation loop, so changing speed mid-beat neither restarts nor jumps the scene.
@@ -55,7 +79,7 @@ export function StoryPlayer({
   // The hash is only written back after the chapter it names has been opened.
   const hashRead = useRef(false);
 
-  const current = compiled.beats[cursor.index]!;
+  const current = compiled.beats[Math.min(cursor.index, last)]!;
   const { beat } = current;
   const chapter = compiled.chapters[current.chapter]!;
   const t = cursor.skip || reduced ? current.end : frame.epoch === cursor.epoch ? frame.t : 0;
@@ -119,12 +143,19 @@ export function StoryPlayer({
     return () => observer.disconnect();
   }, []);
 
-  // Chapter links: open the chapter named in the hash, now and on later changes.
+  // Chapter links: open the chapter named in the hash on arrival and on later hash changes. Only
+  // then: switching between the landscape and portrait story must not move the reader.
+  const chaptersRef = useRef(compiled.chapters);
+  const goRef = useRef(go);
+  useEffect(() => {
+    chaptersRef.current = compiled.chapters;
+    goRef.current = go;
+  });
   useEffect(() => {
     const open = (hash: string) => {
       const id = decodeURIComponent(hash.replace(/^#/, ""));
-      const target = compiled.chapters.find((c) => c.id === id);
-      if (target) go(target.first);
+      const target = chaptersRef.current.find((c) => c.id === id);
+      if (target) goRef.current(target.first);
     };
     const raf = requestAnimationFrame(() => {
       open(window.location.hash);
@@ -136,7 +167,7 @@ export function StoryPlayer({
       cancelAnimationFrame(raf);
       window.removeEventListener("hashchange", onHashChange);
     };
-  }, [compiled, go]);
+  }, []);
 
   // Mirror the current chapter in the hash without adding history entries.
   useEffect(() => {
@@ -189,6 +220,9 @@ export function StoryPlayer({
     />
   );
 
+  const stepIds = useMemo(() => [...new Set(compiled.beats.flatMap((b) => (b.beat.step ? [b.beat.step] : [])))], [compiled]);
+  const stepId = beat.step ?? null;
+
   const announcement = beat.title
     ? [beat.title.heading, beat.title.sub].filter(Boolean).join(". ")
     : beat.plain
@@ -203,57 +237,61 @@ export function StoryPlayer({
             <span className="truncate rounded-[3px] border border-[#ccc] bg-white px-2 py-0.5 text-[12px] text-[#555]">{label}</span>
           ) : null}
           {reduced ? null : <SpeedSelect speed={speed} />}
+          {tools ? tools({ step: stepId, stepIndex: stepId ? stepIds.indexOf(stepId) : null, onDrawer: setDrawer }) : null}
           <ChapterMenu chapters={compiled.chapters} active={current.chapter} onOpen={go} />
         </div>
       </StoryNav>
 
-      <div ref={stageRef} className="relative mt-5 min-h-0 flex-1">
-        {size.width > 0 && size.height > 0 ? (
-          <svg
-            width={size.width}
-            height={size.height}
-            className="absolute inset-0 block"
-            role="img"
-            aria-label={`${story.title}: ${chapter.title}. ${announcement}`}
-          >
-            <g transform={`translate(${PAD},${PAD})`}>
-              <Stage
-                world={world}
-                t={t}
-                width={size.width - PAD * 2}
-                height={size.height - PAD * 2}
-                frozenMessagesAt={reduced ? FROZEN_MESSAGE_AT : undefined}
-                rate={SPEEDS[speed]}
-              />
-            </g>
-          </svg>
-        ) : null}
+      {/* On wide screens an open side drawer takes the right edge; the stage and caption make room for it. */}
+      <div className={`flex min-h-0 flex-1 flex-col ${drawer ? "sm:pr-[400px]" : ""}`}>
+        <div ref={stageRef} className="relative mt-5 min-h-0 flex-1">
+          {size.width > 0 && size.height > 0 ? (
+            <svg
+              width={size.width}
+              height={size.height}
+              className="absolute inset-0 block"
+              role="img"
+              aria-label={`${active.title}: ${chapter.title}. ${announcement}`}
+            >
+              <g transform={`translate(${PAD},${PAD})`}>
+                <Stage
+                  world={world}
+                  t={t}
+                  width={size.width - PAD * 2}
+                  height={size.height - PAD * 2}
+                  frozenMessagesAt={reduced ? FROZEN_MESSAGE_AT : undefined}
+                  rate={SPEEDS[speed]}
+                />
+              </g>
+            </svg>
+          ) : null}
 
-        {beat.title ? (
-          <div className="absolute inset-x-0 top-[40%] -translate-y-1/2 px-4 text-center">
-            <div key={beat.title.heading} className="animate-story-fade">
-              <h1 className="m-0 text-[30px] font-medium leading-[1.1] sm:text-[36px]">{beat.title.heading}</h1>
-              {beat.title.sub ? <h2 className="mt-5 text-[22px] font-medium leading-[1.1] sm:text-[30px]">{beat.title.sub}</h2> : null}
+          {beat.title ? (
+            <div className="absolute inset-x-0 top-[40%] -translate-y-1/2 px-4 text-center">
+              <div key={beat.title.heading} className="animate-story-fade">
+                <h1 className="m-0 text-[30px] font-medium leading-[1.1] sm:text-[36px]">{beat.title.heading}</h1>
+                {beat.title.sub ? <h2 className="mt-5 text-[22px] font-medium leading-[1.1] sm:text-[30px]">{beat.title.sub}</h2> : null}
+              </div>
+              <div className="mt-5">{controls}</div>
             </div>
-            <div className="mt-5">{controls}</div>
-          </div>
-        ) : null}
-      </div>
+          ) : null}
+        </div>
 
-      <div className="mx-auto flex min-h-[170px] w-full max-w-[1170px] shrink-0 flex-col items-center px-4 pb-4 pt-2.5 text-center">
-        {beat.say ? <Caption key={beat.say} source={beat.say} plain={beat.plain ?? false} size={beat.size ?? "lg"} /> : null}
-        {beat.links ? (
-          <ul className="mt-2 flex flex-wrap justify-center gap-x-6 gap-y-1 text-[16px]">
-            {beat.links.map((link) => (
-              <li key={link.href}>
-                <a href={link.href} target="_blank" rel="noreferrer" className="text-[#2a6496] hover:text-[#1d4a70] hover:underline">
-                  {link.text}
-                </a>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-        {beat.title ? null : controls}
+        <div className="mx-auto flex min-h-[170px] w-full max-w-[1170px] shrink-0 flex-col items-center px-4 pb-4 pt-2.5 text-center">
+          {beat.say ? <Caption key={beat.say} source={beat.say} plain={beat.plain ?? false} size={beat.size ?? "lg"} /> : null}
+          {beat.links ? (
+            <ul className="mt-2 flex flex-wrap justify-center gap-x-6 gap-y-1 text-[16px]">
+              {beat.links.map((link) => (
+                <li key={link.href}>
+                  <a href={link.href} target="_blank" rel="noreferrer" className="text-[#2a6496] hover:text-[#1d4a70] hover:underline">
+                    {link.text}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {beat.title ? null : controls}
+        </div>
       </div>
 
       <p className="sr-only" aria-live="polite">

@@ -35,7 +35,10 @@ class ClientAbort extends Error {
 }
 
 export async function streamGeneration(params: {
-  topic: string;
+  /** A topic request (the original format)… */
+  topic?: string;
+  /** …or any request body (see GenerateRequestSchema); the idempotency key is added. */
+  body?: Record<string, unknown>;
   idempotencyKey: string;
   signal: AbortSignal;
   onEvent: (event: GenerationEvent) => void;
@@ -61,7 +64,7 @@ export async function streamGeneration(params: {
     const response = await (params.fetchImpl ?? fetch)("/api/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-      body: JSON.stringify({ topic: params.topic, idempotencyKey: params.idempotencyKey }),
+      body: JSON.stringify(params.body ? { ...params.body, idempotencyKey: params.idempotencyKey } : { topic: params.topic, idempotencyKey: params.idempotencyKey }),
       signal: controller.signal,
     });
 
@@ -148,12 +151,19 @@ export type LoaderError = {
   message: string;
   retryable: boolean;
   reasons?: string[];
+  /** Requests that would work instead (unsupported or ambiguous requests). */
+  suggestions?: string[];
   retryAfterSeconds?: number;
 };
 
+/** `example`: another example for a step; `text`: an explanation or simpler version of a step. */
+export type RequestKind = "topic" | "source" | "example" | "text";
+
 export type LoaderState = {
   status: "idle" | "connecting" | "running" | "completed" | "failed" | "cancelled";
+  /** What is being generated, for display: the topic, the material's title, or the step being explored. */
   topic: string;
+  kind: RequestKind;
   mode: "live" | "demo" | null;
   stages: Record<Stage, { status: StageStatus; message?: string }>;
   maxAttempts: number;
@@ -168,6 +178,7 @@ const freshStages = (): LoaderState["stages"] =>
 export const initialLoaderState: LoaderState = {
   status: "idle",
   topic: "",
+  kind: "topic",
   mode: null,
   stages: freshStages(),
   maxAttempts: 0,
@@ -177,13 +188,13 @@ export const initialLoaderState: LoaderState = {
 };
 
 export type LoaderAction =
-  | { type: "start"; topic: string }
+  | { type: "start"; topic: string; kind?: RequestKind }
   | { type: "event"; event: GenerationEvent }
   | { type: "end"; end: StreamEnd }
   | { type: "reset" };
 
 const FAILURE_TITLES: Record<LoaderError["code"], string> = {
-  unsupported_topic: "This topic doesn't fit the format",
+  unsupported_topic: "This request doesn't fit the format",
   model_refused: "The AI model declined",
   rejected: "No draft passed the checks",
   timeout: "Generation ran out of time",
@@ -198,6 +209,7 @@ const FAILURE_TITLES: Record<LoaderError["code"], string> = {
   rate_limited: "Generation limit reached",
   in_progress: "A generation is already running",
   misconfigured: "Generation isn't set up",
+  demo_mode: "Not available in demo mode",
   connection_lost: "Connection lost",
   stalled: "The server stopped responding",
   client_timeout: "Generation took too long",
@@ -216,6 +228,7 @@ function errorFromEnd(end: StreamEnd): LoaderError | null {
         message: end.event.message,
         retryable: end.event.retryable,
         reasons: end.event.reasons,
+        ...(end.event.suggestions?.length ? { suggestions: end.event.suggestions } : {}),
       };
     case "http_error":
       if (end.error.code === "in_progress") {
@@ -267,7 +280,7 @@ export function loaderReducer(state: LoaderState, action: LoaderAction): LoaderS
     case "reset":
       return initialLoaderState;
     case "start":
-      return { ...initialLoaderState, stages: freshStages(), status: "connecting", topic: action.topic };
+      return { ...initialLoaderState, stages: freshStages(), status: "connecting", topic: action.topic, kind: action.kind ?? "topic" };
     case "event": {
       const event = action.event;
       switch (event.type) {

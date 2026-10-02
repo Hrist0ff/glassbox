@@ -146,6 +146,17 @@ test.describe("story player", () => {
     expect(await button.evaluate((el) => getComputedStyle(el).outlineStyle)).not.toBe("none");
   });
 
+  test("respects reduced motion without a hydration mismatch", async ({ page }) => {
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto("/demo/dns-resolution");
+    await continueButton(page).click();
+    await expect(caption(page)).toHaveText(/^Follow one lookup/);
+    expect(errors).toEqual([]);
+  });
+
   test("lays out on a phone without horizontal scrolling @mobile", async ({ page }) => {
     await page.goto("/demo/dns-resolution");
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
@@ -155,10 +166,80 @@ test.describe("story player", () => {
   });
 });
 
+test.describe("representations", () => {
+  test("a comparison reveals criteria and marks a value as not applicable instead of guessing", async ({ page }) => {
+    await page.goto("/demo/http-versions");
+    await advanceTo(page, /^Server push exists only/);
+    const panel = page.locator("[data-panel='comparison']");
+    await expect(panel).toContainText("HTTP/3");
+    await expect(panel).toContainText("N/A");
+    await expect(panel).toContainText("QPACK");
+  });
+
+  test("a timeline says how it is spaced, and draws only stated relations", async ({ page }) => {
+    await page.goto("/demo/incident-timeline");
+    await advanceTo(page, /^The full disk caused the errors/);
+    const panel = page.locator("[data-panel='timeline']");
+    await expect(panel).toContainText("To scale · min after 14:00");
+    await expect(panel).toContainText("causes");
+    await expect(panel).toContainText("responds to");
+  });
+
+  test("a hierarchy names its relation, and a chart says its numbers are illustrative", async ({ page }) => {
+    await page.goto("/demo/us-government");
+    await advanceTo(page, /^The judicial branch/);
+    await expect(page.locator("[data-panel='hierarchy']")).toContainText("is part of");
+    await page.goto("/demo/compound-interest");
+    await advanceTo(page, /^After 10 years/);
+    await expect(page.locator("[data-panel='chart']")).toContainText("Illustrative numbers, made up for this example");
+  });
+
+  test("Sources and assumptions follows the current step", async ({ page }) => {
+    await page.goto("/demo/compound-interest");
+    await advanceTo(page, /^Both accounts start/);
+    await page.getByRole("button", { name: "Sources" }).click();
+    const drawer = page.getByRole("complementary", { name: "Sources and assumptions" });
+    await expect(drawer).toContainText("Step 1 of 5");
+    await expect(drawer).toContainText("Assumption");
+    await expect(drawer).toContainText("A 5% yearly rate on $1,000");
+    await expect(drawer).toContainText("hand-written example bundled with the app");
+    await expect(drawer).toContainText("Inflation"); // left out
+    await page.keyboard.press("Escape");
+    await expect(drawer).toBeHidden();
+    await expect(page.getByRole("button", { name: "Sources" })).toBeFocused();
+  });
+
+  test("switching between wide and tall layouts keeps the reader's place", async ({ page }) => {
+    await page.goto("/demo/incident-timeline");
+    await advanceTo(page, /^Rolling back the deploy/);
+    await page.setViewportSize({ width: 480, height: 900 });
+    await page.waitForTimeout(400);
+    await expect(caption(page)).toHaveText(/^Rolling back the deploy/);
+    const box = await page.locator("[data-panel='timeline']").boundingBox();
+    expect(box!.height).toBeGreaterThan(box!.width * 0.6); // the portrait layout
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.waitForTimeout(400);
+    await expect(caption(page)).toHaveText(/^Rolling back the deploy/);
+  });
+
+  test("a timeline is laid out again for a phone, without horizontal scrolling @mobile", async ({ page }) => {
+    await page.goto("/demo/incident-timeline");
+    await advanceTo(page, /^At 14:05 the website/);
+    const panel = page.locator("[data-panel='timeline']");
+    const box = await panel.boundingBox();
+    const viewport = page.viewportSize()!;
+    // Portrait layout: the timeline runs down the screen and fits its width.
+    expect(box!.height).toBeGreaterThan(box!.width * 0.6);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width + 1);
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
+  });
+});
+
 test.describe("demo generation", () => {
   test("opens a bundled fixture through the real streaming endpoint", async ({ page }) => {
     await page.goto("/");
-    const input = page.getByLabel("What complex concept should we visualize today?");
+    const input = page.getByLabel("What should we visualize today?");
     await input.fill("How does DNS resolution work?");
     await page.getByRole("button", { name: /Open demo|Visualize/ }).click();
 
@@ -173,12 +254,12 @@ test.describe("demo generation", () => {
 
   test("explains demo-mode limits for other topics and lets the user edit", async ({ page }) => {
     await page.goto("/");
-    await page.getByLabel("What complex concept should we visualize today?").fill("Quantum error correction");
+    await page.getByLabel("What should we visualize today?").fill("Quantum error correction");
     await page.getByRole("button", { name: /Open demo|Visualize/ }).click();
     const alert = page.getByTestId("generation-loader").getByRole("alert");
-    await expect(alert).toContainText("This topic doesn't fit the format");
-    await alert.getByRole("button", { name: "Edit topic" }).click();
-    await expect(page.getByLabel("What complex concept should we visualize today?")).toBeFocused();
+    await expect(alert).toContainText("This request doesn't fit the format");
+    await alert.getByRole("button", { name: "Edit request" }).click();
+    await expect(page.getByLabel("What should we visualize today?")).toBeFocused();
   });
 
   test("validates the topic before sending anything", async ({ page }) => {
@@ -187,7 +268,7 @@ test.describe("demo generation", () => {
       if (r.url().endsWith("/api/generate")) posted = true;
     });
     await page.goto("/");
-    await page.getByLabel("What complex concept should we visualize today?").fill("x");
+    await page.getByLabel("What should we visualize today?").fill("x");
     await page.getByRole("button", { name: /Open demo|Visualize/ }).click();
     await expect(page.getByRole("alert").filter({ hasText: "Enter at least" })).toHaveText("Enter at least 3 characters.");
     expect(posted).toBe(false);
@@ -195,6 +276,14 @@ test.describe("demo generation", () => {
 });
 
 test.describe("api", () => {
+  test("explains that supplied material needs an AI model in demo mode", async ({ request }) => {
+    const response = await request.post("/api/generate", {
+      data: { kind: "source", text: "Planning started on March 3 when the lease ended. The new site opened on March 31.", idempotencyKey: "6a1f2c3e-0b4d-4e5f-8a6b-1c2d3e4f5a02" },
+    });
+    expect(response.status()).toBe(503);
+    expect((await response.json()).error.code).toBe("demo_mode");
+  });
+
   test("rejects malformed requests before streaming", async ({ request }) => {
     const notJson = await request.post("/api/generate", { data: "topic=x", headers: { "Content-Type": "text/plain" } });
     expect(notJson.status()).toBe(415);
@@ -207,6 +296,15 @@ test.describe("api", () => {
       data: { topic: "x".repeat(5000), idempotencyKey: "6a1f2c3e-0b4d-4e5f-8a6b-1c2d3e4f5a01" },
     });
     expect(big.status()).toBe(413);
+    // Pasted material is longer, but limited too.
+    const material = await request.post("/api/generate", {
+      data: { kind: "source", text: "x ".repeat(40_000), idempotencyKey: "6a1f2c3e-0b4d-4e5f-8a6b-1c2d3e4f5a01" },
+    });
+    expect(material.status()).toBe(413);
+    const tampered = await request.post("/api/generate", {
+      data: { kind: "explore", action: "explain", stepId: "s1", topic: "x", concept: { title: "not an explanation" }, idempotencyKey: "6a1f2c3e-0b4d-4e5f-8a6b-1c2d3e4f5a01" },
+    });
+    expect(tampered.status()).toBe(400);
     const crossSite = await request.post("/api/generate", {
       data: { topic: "binary search", idempotencyKey: "6a1f2c3e-0b4d-4e5f-8a6b-1c2d3e4f5a01" },
       headers: { Origin: "https://evil.example" },

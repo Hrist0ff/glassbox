@@ -1,9 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { StoryPlayer } from "@/components/story/StoryPlayer";
 import { assertDevOnly, loadEvalConcept, loadEvalRun } from "@/lib/evals/load";
-import { conceptToStory } from "@/lib/story/from-concept";
-import type { EvalAttempt } from "@/lib/evals/types";
+import type { EvalAttempt, EvalRunResult } from "@/lib/evals/types";
+import { EvalPlayer } from "./EvalPlayer";
 
 export default async function EvalRunPage({ params, searchParams }: PageProps<"/dev/evals/[run]">) {
   assertDevOnly();
@@ -22,7 +21,8 @@ export default async function EvalRunPage({ params, searchParams }: PageProps<"/
       </Link>
       <h1 className="mt-4 font-display text-3xl text-ink">{run.dir}</h1>
       <p className="mt-1 text-sm text-ink-muted">
-        Models {Object.values(run.models).join(" / ")} · prompts{" "}
+        Models {[...new Set(Object.values(run.models))].join(" / ")}
+        {run.graderModel ? ` · grader ${run.graderModel}` : ""} · prompts{" "}
         <span className="font-mono">{Object.entries(run.promptHashes).map(([k, v]) => `${k}=${v}`).join(" ")}</span>
       </p>
 
@@ -31,7 +31,8 @@ export default async function EvalRunPage({ params, searchParams }: PageProps<"/
           <li key={i} className={`px-4 py-3 ${i === selected ? "bg-accent-soft/50" : ""}`}>
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <Link href={`/dev/evals/${run.dir}?view=${i}`} className="font-semibold text-ink underline-offset-4 hover:underline">
-                {r.correct ? "✓" : "✗"} {r.topic}
+                {r.correct ? "✓" : "✗"} {r.id ? `${r.id}: ` : ""}
+                {r.topic}
                 {r.repeat > 1 ? ` #${r.repeat}` : ""}
               </Link>
               <span className="text-sm text-ink-muted">
@@ -40,6 +41,7 @@ export default async function EvalRunPage({ params, searchParams }: PageProps<"/
               </span>
             </div>
             {r.failureMessage ? <p className="mt-1 text-sm text-ink-soft">{r.failureMessage}</p> : null}
+            <ResultSummary result={r} />
           </li>
         ))}
       </ul>
@@ -56,17 +58,39 @@ export default async function EvalRunPage({ params, searchParams }: PageProps<"/
           </section>
           {concept ? (
             <div className="h-[85vh] overflow-hidden rounded-xl border border-line">
-              <StoryPlayer
-                key={`${run.dir}-${selected}`}
-                story={conceptToStory(concept, { subtitle: `Eval run ${run.dir}` })}
-                label="AI-generated (eval)"
-                embedded
-              />
+              <EvalPlayer key={`${run.dir}-${selected}`} concept={concept} subtitle={`Eval run ${run.dir}`} />
             </div>
           ) : (
             <p className="text-sm text-ink-muted">No accepted explanation for this run.</p>
           )}
         </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Deterministic checks and the independent grade of one run (newer runs only). */
+function ResultSummary({ result }: { result: EvalRunResult }) {
+  const checks = result.checks;
+  const grade = result.grade;
+  if (!checks && !grade) return null;
+  return (
+    <div className="mt-1 text-xs text-ink-muted">
+      {checks ? (
+        <p>
+          {checks.representation ? `${checks.representation}${checks.representationOk === false ? " (not expected)" : ""}` : ""}
+          {checks.citationCoverage !== undefined ? ` · citations ${Math.round(checks.citationCoverage * 100)}%` : ""}
+          {checks.claimsTotal !== undefined ? ` · ${checks.claimsStated}/${checks.claimsTotal} claims stated` : ""}
+          {checks.limitationsShown !== undefined ? ` · limitations ${checks.limitationsShown ? "shown" : "MISSING"}` : ""}
+          {checks.canaryAbsent !== undefined ? ` · embedded instructions ${checks.canaryAbsent ? "ignored" : "FOLLOWED"}` : ""}
+          {checks.portraitOk !== undefined ? ` · phone layout ${checks.portraitOk ? "ok" : "falls back"}` : ""}
+          {checks.suggestionsOffered !== undefined ? ` · alternatives ${checks.suggestionsOffered ? "offered" : "none"}` : ""}
+        </p>
+      ) : null}
+      {grade ? (
+        <p>
+          Grade {Object.entries(grade.scores).map(([k, v]) => `${k.replace(/_/g, " ")} ${v || "n/a"}`).join(" · ")} · language {grade.languageOk ? "ok" : "WRONG"}. {grade.summary}
+        </p>
       ) : null}
     </div>
   );

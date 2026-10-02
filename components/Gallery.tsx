@@ -67,7 +67,7 @@ function ExamplesSection() {
               length: `${concept.steps.length} steps`,
               origin: "curated",
               bundled: true,
-              thumbnail: concept.steps[3] ? <StepThumbnail step={concept.steps[3]} /> : undefined,
+              thumbnail: <StepThumbnail concept={concept} index={3} />,
             }}
           />
         ))}

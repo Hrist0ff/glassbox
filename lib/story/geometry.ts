@@ -115,9 +115,10 @@ export function entityBox(entity: Entity): Box | null {
 /** Arena units per domain unit on each axis (the arena is 1000 × 600, the domain 100 × 100). */
 export const ARENA_PER_DOMAIN = { x: 10, y: 6 } as const;
 
+/** Size-deciding shape of a log, code, table, or version-1 timeline panel entity. */
 export function storyPanelShape(panel: PanelEntity): PanelShape {
   return {
-    kind: panel.variant,
+    kind: panel.variant as PanelShape["kind"],
     titled: panel.title.trim().length > 0,
     count: panel.variant === "table" ? (panel.rows?.length ?? 0) : panel.cells.length,
     columns: panel.columns?.length ?? 0,
@@ -127,10 +128,16 @@ export function storyPanelShape(panel: PanelEntity): PanelShape {
   };
 }
 
+/** Panel size in arena units: its frame, its reserved box, or (version 1) its current content. */
+export function panelArenaSize(panel: PanelEntity): { width: number; height: number } {
+  return panel.frame?.size ?? panel.box ?? panelSize(storyPanelShape(panel));
+}
+
 /** Panel size in domain units. */
 export function panelDomainSize(panel: PanelEntity): { width: number; height: number } {
-  const { width, height } = panelSize(storyPanelShape(panel));
-  return { width: width / ARENA_PER_DOMAIN.x, height: height / ARENA_PER_DOMAIN.y };
+  const { width, height } = panelArenaSize(panel);
+  const scale = panel.scale ?? ARENA_PER_DOMAIN;
+  return { width: width / scale.x, height: height / scale.y };
 }
 
 export function unionBox(boxes: Box[]): Box | null {
